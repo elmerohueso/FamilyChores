@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History - Family Chores</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .header-nav {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .subtitle {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            overflow-x: auto;
+        }
+
+        .search-bar {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .search-icon {
+            font-size: 20px;
+            color: #666;
+        }
+
+        .user-filter-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 15px;
+        }
+
+        .user-filter-badge .clear-filter {
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            color: white;
+            text-decoration: none;
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            text-align: center;
+        }
+
+        .user-filter-badge .clear-filter:hover {
+            opacity: 1;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        th {
+            padding: 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+
+        th:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .sort-indicator {
+            margin-left: 8px;
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        tbody tr {
+            border-bottom: 1px solid #e0e0e0;
+            transition: background-color 0.2s;
+        }
+
+        tbody tr:hover {
+            background-color: #f8f9ff;
+        }
+
+        tbody tr:last-child {
+            border-bottom: none;
+        }
+
+        td {
+            padding: 16px;
+            color: #333;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .transaction-type {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .type-chore {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .type-redemption {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .chore-name {
+            color: #333;
+            font-weight: 500;
+        }
+
+        .redemption-info {
+            color: #666;
+            font-style: italic;
+        }
+
+        .points-value {
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        .points-positive {
+            color: #4caf50;
+        }
+
+        .points-negative {
+            color: #ff9800;
+        }
+
+        .timestamp {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 18px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 18px;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .card {
+                padding: 20px;
+            }
+
+            table {
+                font-size: 14px;
+            }
+
+            th, td {
+                padding: 12px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-nav">
+                <a href="/users" class="nav-link nav-link-left">← Users</a>
+            </div>
+            <h1>💰 Chore & Reward History</h1>
+            <p class="subtitle">View all chores and redemptions</p>
+        </header>
+
+        <div class="card">
+            <div id="loading" class="loading">Loading history...</div>
+            <div id="historyContainer" style="display: none;">
+                <div id="userFilterBadge" class="user-filter-badge" style="display: none;">
+                    <span>Showing transactions for: <strong id="filteredUserName"></strong></span>
+                    <a href="/history" class="clear-filter" title="Clear filter">×</a>
+                </div>
+                <div class="search-bar">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="searchInput" class="search-input" placeholder="Search by user, chore, or type...">
+                </div>
+                <table id="historyTable">
+                    <thead>
+                        <tr>
+                            
+                            <th onclick="sortTable('user_name')">
+                                User
+                                <span class="sort-indicator" id="sort-user_name"></span>
+                            </th>
+                            <th onclick="sortTable('type')">
+                                Type
+                                <span class="sort-indicator" id="sort-type"></span>
+                            </th>
+                            <th onclick="sortTable('description')">
+                                Description
+                                <span class="sort-indicator" id="sort-description"></span>
+                            </th>
+                            <th onclick="sortTable('value')">
+                                Points
+                                <span class="sort-indicator" id="sort-value"></span>
+                            </th>
+                            <th onclick="sortTable('timestamp')">
+                                Date & Time
+                                <span class="sort-indicator" id="sort-timestamp"></span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                    </tbody>
+                </table>
+                <div id="emptyState" class="empty-state" style="display: none;">
+                    <div class="empty-state-icon">📋</div>
+                    <div class="empty-state-text">No transactions found</div>
+                </div>
+            </div>
+        </div>
+
+        <a href="/" class="back-link">← Home</a>
+    </div>
+
+    <script>
+        let allTransactions = [];
+        let filteredTransactions = [];
+        let sortColumn = null;
+        let sortDirection = 'desc'; // Default to newest first
+        let filterUserId = null;
+        let filteredUserName = null;
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function getTransactionType(transaction) {
+            return transaction.value < 0 ? 'redemption' : 'chore';
+        }
+
+        function getTransactionDescription(transaction) {
+            if (transaction.value < 0) {
+                // Redemption
+                const points = Math.abs(transaction.value);
+                const dollars = (points / 5) * 1;
+                const minutes = (points / 5) * 30;
+                return `Redeemed ${points} points ($${dollars.toFixed(2)} or ${minutes} min)`;
+            } else {
+                // Chore completion
+                return transaction.chore_name || 'Custom chore';
+            }
+        }
+
+        function updateSortIndicator(column) {
+            document.querySelectorAll('.sort-indicator').forEach(ind => ind.textContent = '');
+            
+            if (sortColumn === column) {
+                const indicator = document.getElementById(`sort-${column}`);
+                indicator.textContent = sortDirection === 'asc' ? '▲' : '▼';
+            }
+        }
+
+        function sortTable(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = column === 'timestamp' ? 'desc' : 'asc';
+            }
+            
+            updateSortIndicator(column);
+            applyFiltersAndSort();
+        }
+
+        function applyFiltersAndSort() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            filteredTransactions = allTransactions.filter(transaction => {
+                // Apply user filter if set
+                if (filterUserId && transaction.user_id != filterUserId) {
+                    return false;
+                }
+                
+                // Apply search filter
+                const userName = (transaction.user_name || '').toLowerCase();
+                const choreName = (transaction.chore_name || '').toLowerCase();
+                const type = getTransactionType(transaction);
+                const description = getTransactionDescription(transaction).toLowerCase();
+                
+                return userName.includes(searchTerm) || 
+                       choreName.includes(searchTerm) || 
+                       type.includes(searchTerm) ||
+                       description.includes(searchTerm);
+            });
+
+            // Sort
+            if (sortColumn) {
+                filteredTransactions.sort((a, b) => {
+                    let aVal, bVal;
+                    
+                    switch(sortColumn) {
+                        case 'timestamp':
+                            aVal = new Date(a.timestamp || 0);
+                            bVal = new Date(b.timestamp || 0);
+                            break;
+                        case 'user_name':
+                            aVal = (a.user_name || '').toLowerCase();
+                            bVal = (b.user_name || '').toLowerCase();
+                            break;
+                        case 'type':
+                            aVal = getTransactionType(a);
+                            bVal = getTransactionType(b);
+                            break;
+                        case 'description':
+                            aVal = getTransactionDescription(a).toLowerCase();
+                            bVal = getTransactionDescription(b).toLowerCase();
+                            break;
+                        case 'value':
+                            aVal = a.value || 0;
+                            bVal = b.value || 0;
+                            break;
+                        default:
+                            aVal = a[sortColumn];
+                            bVal = b[sortColumn];
+                    }
+                    
+                    if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+                    if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
+
+            renderTable();
+        }
+
+        function renderTable() {
+            const tableBody = document.getElementById('historyTableBody');
+            const emptyState = document.getElementById('emptyState');
+            const table = document.getElementById('historyTable');
+
+            if (filteredTransactions.length === 0) {
+                table.style.display = 'none';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            table.style.display = 'table';
+            emptyState.style.display = 'none';
+
+            tableBody.innerHTML = filteredTransactions.map(transaction => {
+                const type = getTransactionType(transaction);
+                const description = getTransactionDescription(transaction);
+                const isRedemption = transaction.value < 0;
+                
+                return `
+                    <tr>
+                        
+                        <td class="user-name">${escapeHtml(transaction.user_name || 'Unknown')}</td>
+                        <td>
+                            <span class="transaction-type type-${type}">
+                                ${type === 'redemption' ? 'Redemption' : 'Chore'}
+                            </span>
+                        </td>
+                        <td>
+                            ${isRedemption 
+                                ? `<span class="redemption-info">${escapeHtml(description)}</span>`
+                                : `<span class="chore-name">${escapeHtml(description)}</span>`
+                            }
+                        </td>
+                        <td>
+                            <span class="points-value ${isRedemption ? 'points-negative' : 'points-positive'}">
+                                ${isRedemption ? '' : '+'}${transaction.value}
+                            </span>
+                        </td>
+                        <td class="timestamp">${escapeHtml(formatTimestamp(transaction.timestamp))}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function getUrlParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        async function loadHistory() {
+            try {
+                // Check for user_id filter in URL
+                const userIdParam = getUrlParameter('user_id');
+                if (userIdParam) {
+                    filterUserId = parseInt(userIdParam);
+                }
+
+                const response = await fetch('/api/transactions');
+                allTransactions = await response.json();
+
+                // If filtering by user, get the user's name
+                if (filterUserId) {
+                    const filteredTransaction = allTransactions.find(t => t.user_id == filterUserId);
+                    if (filteredTransaction) {
+                        filteredUserName = filteredTransaction.user_name || 'Unknown';
+                        document.getElementById('filteredUserName').textContent = filteredUserName;
+                        document.getElementById('userFilterBadge').style.display = 'inline-flex';
+                    }
+                } else {
+                    document.getElementById('userFilterBadge').style.display = 'none';
+                }
+
+                const loadingDiv = document.getElementById('loading');
+                const historyContainer = document.getElementById('historyContainer');
+
+                loadingDiv.style.display = 'none';
+                historyContainer.style.display = 'block';
+
+                applyFiltersAndSort();
+
+            } catch (error) {
+                console.error('Error loading history:', error);
+                document.getElementById('loading').textContent = 'Error loading history. Please try again.';
+            }
+        }
+
+        // Search functionality
+        document.getElementById('searchInput').addEventListener('input', () => {
+            applyFiltersAndSort();
+        });
+
+        // Load history when page loads
+        loadHistory();
+    </script>
+</body>
+</html>
+

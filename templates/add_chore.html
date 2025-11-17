@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Chores - Family Chores</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            position: relative;
+            padding-bottom: 50px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            color: #667eea;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .file-upload-area {
+            border: 2px dashed #e0e0e0;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .file-upload-area:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .file-upload-area.dragover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .file-upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .file-upload-text {
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .file-upload-hint {
+            font-size: 12px;
+            color: #999;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-name {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #333;
+            display: none;
+        }
+
+        .file-name.show {
+            display: block;
+        }
+
+        .csv-preview {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+            color: #333;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:hover {
+            background: #f9f9f9;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .message {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .csv-format-info {
+            background: #f8f9ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .csv-format-info code {
+            background: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Add Chores</h1>
+            <p class="subtitle">Add chores manually or import from CSV</p>
+
+            <div id="message" class="message"></div>
+
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('manual')">Manual Entry</button>
+                <button class="tab" onclick="switchTab('csv')">CSV Import</button>
+            </div>
+
+            <!-- Manual Entry Tab -->
+            <div id="manual-tab" class="tab-content active">
+                <form id="choreForm">
+                    <div class="form-group">
+                        <label for="chore">Chore Name *</label>
+                        <input type="text" id="chore" name="chore" required placeholder="e.g., Take out trash">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="point_value">Point Value *</label>
+                        <input type="number" id="point_value" name="point_value" required min="1" value="5">
+                        <div class="help-text">Points awarded for completing this chore</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="repeat">Repeat Frequency</label>
+                        <select id="repeat" name="repeat">
+                            <option value="as_needed" selected>As Needed</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="">None</option>
+                        </select>
+                        <div class="help-text">How often this chore should be repeated (default: as needed)</div>
+                    </div>
+
+                    <div class="button-group">
+                        <button type="submit" class="btn-primary">Add Chore</button>
+                        <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- CSV Import Tab -->
+            <div id="csv-tab" class="tab-content">
+                <div class="csv-format-info">
+                    <strong>CSV Format:</strong> Your CSV file should have a header row with columns: <code>chore</code>, <code>point_value</code>, and optionally <code>repeat</code>.<br>
+                    <strong>Repeat values:</strong> Leave empty or omit for default "as_needed", use "null" or "none" for explicit null, or specify: daily, weekly, monthly, as_needed<br>
+                    Example:<br>
+                    <code>chore,point_value,repeat<br>
+                    Take out trash,5,daily<br>
+                    Wash dishes,10,<br>
+                    Vacuum living room,15,weekly<br>
+                    Special task,20,null</code>
+                </div>
+
+                <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('csvFile').click()">
+                    <div class="file-upload-icon">📄</div>
+                    <div class="file-upload-text">Click to select CSV file or drag and drop</div>
+                    <div class="file-upload-hint">CSV files only</div>
+                    <input type="file" id="csvFile" accept=".csv" onchange="handleFileSelect(event)">
+                </div>
+
+                <div id="fileName" class="file-name"></div>
+
+                <div id="csvPreview" class="csv-preview" style="display: none;">
+                    <table id="previewTable">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="button-group">
+                    <button type="button" class="btn-primary" onclick="importCSV()" id="importBtn" disabled>Import Chores</button>
+                    <button type="button" class="btn-secondary" onclick="clearCSV()">Clear</button>
+                </div>
+            </div>
+        </div>
+
+        <a href="/chores" class="back-link">← Chores</a>
+    </div>
+
+    <script>
+        let csvData = null;
+
+        function switchTab(tab) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Show selected tab
+            if (tab === 'manual') {
+                document.getElementById('manual-tab').classList.add('active');
+                document.querySelectorAll('.tab')[0].classList.add('active');
+            } else {
+                document.getElementById('csv-tab').classList.add('active');
+                document.querySelectorAll('.tab')[1].classList.add('active');
+            }
+
+            // Clear messages
+            document.getElementById('message').style.display = 'none';
+        }
+
+        function showMessage(text, isError = false) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
+            messageDiv.style.display = 'block';
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function resetForm() {
+            document.getElementById('choreForm').reset();
+            document.getElementById('message').style.display = 'none';
+        }
+
+        // Manual form submission
+        document.getElementById('choreForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const repeatValue = formData.get('repeat');
+            const data = {
+                chore: formData.get('chore'),
+                point_value: parseInt(formData.get('point_value')),
+                repeat: repeatValue === '' ? null : repeatValue
+            };
+
+            try {
+                const response = await fetch('/api/chores', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(`Chore "${data.chore}" added successfully! Chore ID: ${result.chore_id}`);
+                    resetForm();
+                } else {
+                    showMessage(result.error || 'Error adding chore', true);
+                }
+            } catch (error) {
+                showMessage('Network error. Please try again.', true);
+                console.error('Error:', error);
+            }
+        });
+
+        // CSV file handling
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                parseCSV(file);
+            }
+        }
+
+        // Drag and drop
+        const fileUploadArea = document.getElementById('fileUploadArea');
+        
+        fileUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.add('dragover');
+        });
+
+        fileUploadArea.addEventListener('dragleave', () => {
+            fileUploadArea.classList.remove('dragover');
+        });
+
+        fileUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.csv')) {
+                document.getElementById('csvFile').files = e.dataTransfer.files;
+                parseCSV(file);
+            } else {
+                showMessage('Please select a CSV file', true);
+            }
+        });
+
+        function parseCSV(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                const lines = text.split('\n').filter(line => line.trim());
+                
+                if (lines.length < 2) {
+                    showMessage('CSV file must have at least a header and one data row', true);
+                    return;
+                }
+
+                // Parse header
+                const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                const requiredHeaders = ['chore', 'point_value'];
+                
+                if (!requiredHeaders.every(h => headers.includes(h))) {
+                    showMessage('CSV must have "chore" and "point_value" columns', true);
+                    return;
+                }
+
+                // Parse data
+                csvData = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const values = lines[i].split(',').map(v => v.trim());
+                    if (values.length < 2) continue;
+                    
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = values[index] || '';
+                    });
+                    
+                    // Validate required fields
+                    if (row.chore && row.point_value) {
+                        csvData.push(row);
+                    }
+                }
+
+                if (csvData.length === 0) {
+                    showMessage('No valid rows found in CSV file', true);
+                    return;
+                }
+
+                // Show preview
+                showCSVPreview(headers, csvData);
+                document.getElementById('fileName').textContent = `Selected: ${file.name} (${csvData.length} chores)`;
+                document.getElementById('fileName').classList.add('show');
+                document.getElementById('importBtn').disabled = false;
+            };
+            reader.readAsText(file);
+        }
+
+        function showCSVPreview(headers, data) {
+            const thead = document.querySelector('#previewTable thead');
+            const tbody = document.querySelector('#previewTable tbody');
+            
+            // Create header
+            thead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+            
+            // Create rows (limit to 10 for preview)
+            const previewData = data.slice(0, 10);
+            tbody.innerHTML = previewData.map(row => {
+                return '<tr>' + headers.map(h => `<td>${row[h] || ''}</td>`).join('') + '</tr>';
+            }).join('');
+            
+            if (data.length > 10) {
+                tbody.innerHTML += `<tr><td colspan="${headers.length}" style="text-align: center; color: #999;">... and ${data.length - 10} more rows</td></tr>`;
+            }
+            
+            document.getElementById('csvPreview').style.display = 'block';
+        }
+
+        async function importCSV() {
+            if (!csvData || csvData.length === 0) {
+                showMessage('No data to import', true);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/chores/import', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ chores: csvData })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(`Successfully imported ${result.imported} chore(s)! ${result.errors > 0 ? `${result.errors} error(s) occurred.` : ''}`);
+                    clearCSV();
+                } else {
+                    showMessage(result.error || 'Error importing chores', true);
+                }
+            } catch (error) {
+                showMessage('Network error. Please try again.', true);
+                console.error('Error:', error);
+            }
+        }
+
+        function clearCSV() {
+            csvData = null;
+            document.getElementById('csvFile').value = '';
+            document.getElementById('fileName').classList.remove('show');
+            document.getElementById('csvPreview').style.display = 'none';
+            document.getElementById('importBtn').disabled = true;
+        }
+    </script>
+</body>
+</html>
+

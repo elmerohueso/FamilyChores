@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Chores - Family Chores</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .header-nav {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .nav-link-left {
+            left: 0;
+        }
+
+        .nav-link-right {
+            right: 0;
+        }
+
+        h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .subtitle {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            overflow-x: auto;
+        }
+
+        .search-bar {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .search-icon {
+            font-size: 20px;
+            color: #666;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        th {
+            padding: 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+
+        th:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .sort-indicator {
+            margin-left: 8px;
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        tbody tr {
+            border-bottom: 1px solid #e0e0e0;
+            transition: background-color 0.2s;
+        }
+
+        tbody tr:hover {
+            background-color: #f8f9ff;
+        }
+
+        tbody tr.editing {
+            background-color: #fff9e6;
+        }
+
+        tbody tr:last-child {
+            border-bottom: none;
+        }
+
+        td {
+            padding: 16px;
+            color: #333;
+        }
+
+        .chore-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+
+        .point-value {
+            font-weight: 700;
+            color: #667eea;
+            font-size: 18px;
+        }
+
+        .repeat-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .repeat-daily {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .repeat-weekly {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .repeat-monthly {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .repeat-as_needed {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .repeat-none {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .editable {
+            cursor: pointer;
+            position: relative;
+        }
+
+        .editable:hover::after {
+            content: '✏️';
+            position: absolute;
+            right: 5px;
+            font-size: 12px;
+            opacity: 0.5;
+        }
+
+        .edit-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 2px solid #667eea;
+            border-radius: 6px;
+            font-size: 16px;
+            font-family: inherit;
+        }
+
+        .edit-select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 2px solid #667eea;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            background: white;
+        }
+
+        .edit-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .btn-save, .btn-cancel {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-save {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-save:hover {
+            background: #45a049;
+        }
+
+        .btn-cancel {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .btn-cancel:hover {
+            background: #e0e0e0;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+
+        .btn-add-chore {
+            display: inline-block;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-add-chore:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 18px;
+        }
+
+        .message {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            .card {
+                padding: 20px;
+            }
+
+            table {
+                font-size: 14px;
+            }
+
+            th, td {
+                padding: 12px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-nav">
+                <a href="/" class="nav-link nav-link-left">← Home</a>
+                <a href="/add-chore" class="nav-link nav-link-right">Add Chores →</a>
+            </div>
+            <h1>📋 Chores</h1>
+            <p class="subtitle">View all available chores and their details</p>
+        </header>
+
+        <div class="card">
+            <div id="message" class="message"></div>
+            <div id="loading" class="loading">Loading chores...</div>
+            <div id="choresContainer" style="display: none;">
+                <div class="search-bar">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="searchInput" class="search-input" placeholder="Search chores...">
+                </div>
+                <table id="choresTable">
+                    <thead>
+                        <tr>
+                            <th onclick="sortTable('chore')">
+                                Chore
+                                <span class="sort-indicator" id="sort-chore"></span>
+                            </th>
+                            <th onclick="sortTable('point_value')">
+                                Point Value
+                                <span class="sort-indicator" id="sort-point_value"></span>
+                            </th>
+                            <th onclick="sortTable('repeat')">
+                                Repeat
+                                <span class="sort-indicator" id="sort-repeat"></span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="choresTableBody">
+                    </tbody>
+                </table>
+                <div id="emptyState" class="empty-state" style="display: none;">
+                    <div class="empty-state-icon">📋</div>
+                    <div class="empty-state-text">No chores found. Add your first chore!</div>
+                    <a href="/add-chore" class="btn-add-chore">Add Chore</a>
+                </div>
+            </div>
+        </div>
+
+        <a href="/" class="back-link">← Back to Home</a>
+    </div>
+
+    <script>
+        let allChores = [];
+        let filteredChores = [];
+        let sortColumn = null;
+        let sortDirection = 'asc';
+        let editingChoreId = null;
+
+        function getRepeatBadgeClass(repeat) {
+            if (!repeat) return 'repeat-none';
+            const repeatLower = repeat.toLowerCase();
+            if (repeatLower === 'daily') return 'repeat-daily';
+            if (repeatLower === 'weekly') return 'repeat-weekly';
+            if (repeatLower === 'monthly') return 'repeat-monthly';
+            if (repeatLower === 'as_needed') return 'repeat-as_needed';
+            return 'repeat-none';
+        }
+
+        function formatRepeat(repeat) {
+            if (!repeat) return 'None';
+            const repeatLower = repeat.toLowerCase();
+            if (repeatLower === 'as_needed') return 'As Needed';
+            return repeat.charAt(0).toUpperCase() + repeat.slice(1);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showMessage(text, isError = false) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
+            messageDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        function updateSortIndicator(column) {
+            // Clear all indicators
+            document.querySelectorAll('.sort-indicator').forEach(ind => ind.textContent = '');
+            
+            if (sortColumn === column) {
+                const indicator = document.getElementById(`sort-${column}`);
+                indicator.textContent = sortDirection === 'asc' ? '▲' : '▼';
+            }
+        }
+
+        function sortTable(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            
+            updateSortIndicator(column);
+            applyFiltersAndSort();
+        }
+
+        function applyFiltersAndSort() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            filteredChores = allChores.filter(chore => {
+                const choreName = (chore.chore || '').toLowerCase();
+                const repeat = formatRepeat(chore.repeat).toLowerCase();
+                return choreName.includes(searchTerm) || repeat.includes(searchTerm);
+            });
+
+            // Sort
+            if (sortColumn) {
+                filteredChores.sort((a, b) => {
+                    let aVal = a[sortColumn];
+                    let bVal = b[sortColumn];
+                    
+                    // Handle null/undefined values
+                    if (aVal == null) aVal = '';
+                    if (bVal == null) bVal = '';
+                    
+                    // Handle numeric sorting for point_value
+                    if (sortColumn === 'point_value') {
+                        aVal = Number(aVal) || 0;
+                        bVal = Number(bVal) || 0;
+                    } else {
+                        aVal = String(aVal).toLowerCase();
+                        bVal = String(bVal).toLowerCase();
+                    }
+                    
+                    if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+                    if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
+
+            renderTable();
+        }
+
+        function renderTable() {
+            const tableBody = document.getElementById('choresTableBody');
+            const emptyState = document.getElementById('emptyState');
+            const table = document.getElementById('choresTable');
+
+            if (filteredChores.length === 0) {
+                table.style.display = 'none';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            table.style.display = 'table';
+            emptyState.style.display = 'none';
+
+            tableBody.innerHTML = filteredChores.map(chore => {
+                const repeatClass = getRepeatBadgeClass(chore.repeat);
+                const repeatText = formatRepeat(chore.repeat);
+                const isEditing = editingChoreId === chore.chore_id;
+                const rowClass = isEditing ? 'editing' : '';
+                
+                if (isEditing) {
+                    return `
+                        <tr class="${rowClass}" data-chore-id="${chore.chore_id}">
+                            <td>
+                                <input type="text" class="edit-input" id="edit-chore-${chore.chore_id}" 
+                                       value="${escapeHtml(chore.chore)}" />
+                            </td>
+                            <td>
+                                <input type="number" class="edit-input" id="edit-point-${chore.chore_id}" 
+                                       value="${chore.point_value || 0}" min="1" />
+                            </td>
+                            <td>
+                                <select class="edit-select" id="edit-repeat-${chore.chore_id}">
+                                    <option value="as_needed" ${chore.repeat === 'as_needed' ? 'selected' : ''}>As Needed</option>
+                                    <option value="daily" ${chore.repeat === 'daily' ? 'selected' : ''}>Daily</option>
+                                    <option value="weekly" ${chore.repeat === 'weekly' ? 'selected' : ''}>Weekly</option>
+                                    <option value="monthly" ${chore.repeat === 'monthly' ? 'selected' : ''}>Monthly</option>
+                                    <option value="" ${!chore.repeat ? 'selected' : ''}>None</option>
+                                </select>
+                                <div class="edit-actions">
+                                    <button class="btn-save" onclick="saveChore(${chore.chore_id})">Save</button>
+                                    <button class="btn-cancel" onclick="cancelEdit()">Cancel</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }
+                
+                return `
+                    <tr class="${rowClass}" data-chore-id="${chore.chore_id}">
+                        <td class="chore-name editable" onclick="startEdit(${chore.chore_id}, 'chore')">
+                            ${escapeHtml(chore.chore)}
+                        </td>
+                        <td class="point-value editable" onclick="startEdit(${chore.chore_id}, 'point_value')">
+                            ${chore.point_value || 0}
+                        </td>
+                        <td class="editable" onclick="startEdit(${chore.chore_id}, 'repeat')">
+                            <span class="repeat-badge ${repeatClass}">${escapeHtml(repeatText)}</span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function startEdit(choreId, field) {
+            if (editingChoreId !== null && editingChoreId !== choreId) {
+                cancelEdit();
+            }
+            editingChoreId = choreId;
+            renderTable();
+            
+            // Focus on the appropriate input
+            if (field === 'chore') {
+                document.getElementById(`edit-chore-${choreId}`)?.focus();
+            } else if (field === 'point_value') {
+                document.getElementById(`edit-point-${choreId}`)?.focus();
+            } else if (field === 'repeat') {
+                document.getElementById(`edit-repeat-${choreId}`)?.focus();
+            }
+        }
+
+        function cancelEdit() {
+            editingChoreId = null;
+            renderTable();
+        }
+
+        async function saveChore(choreId) {
+            const choreInput = document.getElementById(`edit-chore-${choreId}`);
+            const pointInput = document.getElementById(`edit-point-${choreId}`);
+            const repeatSelect = document.getElementById(`edit-repeat-${choreId}`);
+
+            if (!choreInput || !pointInput || !repeatSelect) {
+                showMessage('Error: Could not find edit fields', true);
+                return;
+            }
+
+            const chore = choreInput.value.trim();
+            const pointValue = parseInt(pointInput.value);
+            const repeat = repeatSelect.value;
+
+            if (!chore) {
+                showMessage('Chore name is required', true);
+                return;
+            }
+
+            if (isNaN(pointValue) || pointValue < 1) {
+                showMessage('Point value must be a positive number', true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/chores/${choreId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chore: chore,
+                        point_value: pointValue,
+                        repeat: repeat
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage('Chore updated successfully!');
+                    editingChoreId = null;
+                    await loadChores();
+                } else {
+                    showMessage(result.error || 'Error updating chore', true);
+                }
+            } catch (error) {
+                showMessage('Network error. Please try again.', true);
+                console.error('Error:', error);
+            }
+        }
+
+        async function loadChores() {
+            try {
+                const response = await fetch('/api/chores');
+                allChores = await response.json();
+
+                const loadingDiv = document.getElementById('loading');
+                const choresContainer = document.getElementById('choresContainer');
+
+                loadingDiv.style.display = 'none';
+                choresContainer.style.display = 'block';
+
+                if (allChores.length === 0) {
+                    filteredChores = [];
+                    renderTable();
+                    return;
+                }
+
+                applyFiltersAndSort();
+
+            } catch (error) {
+                console.error('Error loading chores:', error);
+                document.getElementById('loading').textContent = 'Error loading chores. Please try again.';
+            }
+        }
+
+        // Search functionality
+        document.getElementById('searchInput').addEventListener('input', () => {
+            applyFiltersAndSort();
+        });
+
+        // Load chores when page loads
+        loadChores();
+    </script>
+</body>
+</html>

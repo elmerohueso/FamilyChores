@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Record Chore - Family Chores</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .header-nav {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .subtitle {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        select,
+        input[type="number"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        select:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .searchable-dropdown {
+            position: relative;
+            width: 100%;
+        }
+
+        .searchable-dropdown-input {
+            width: 100%;
+            padding: 12px 16px;
+            padding-right: 40px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+            background: white;
+            cursor: pointer;
+        }
+
+        .searchable-dropdown-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .searchable-dropdown-arrow {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: #666;
+            font-size: 12px;
+        }
+
+        .searchable-dropdown-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .searchable-dropdown-list.show {
+            display: block;
+        }
+
+        .searchable-dropdown-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .searchable-dropdown-item:last-child {
+            border-bottom: none;
+        }
+
+        .searchable-dropdown-item:hover {
+            background-color: #f8f9ff;
+        }
+
+        .searchable-dropdown-item.selected {
+            background-color: #f0f4ff;
+            font-weight: 600;
+        }
+
+        .searchable-dropdown-item.hidden {
+            display: none;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .point-preview {
+            background: #f8f9ff;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+            text-align: center;
+        }
+
+        .point-preview-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .point-preview-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .message {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            padding: 20px 24px;
+            min-width: 300px;
+            max-width: 400px;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transform: translateX(400px);
+            opacity: 0;
+            transition: all 0.3s ease-out;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        .toast-icon {
+            font-size: 32px;
+            flex-shrink: 0;
+        }
+
+        .toast-content {
+            flex: 1;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+            font-size: 16px;
+        }
+
+        .toast-message {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .user-balance {
+            font-size: 12px;
+            color: #667eea;
+            margin-top: 4px;
+            font-weight: 600;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: white;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-nav">
+                <a href="/users" class="nav-link nav-link-left">← Users</a>
+            </div>
+            <h1>✅ Record a Chore</h1>
+            <p class="subtitle">Record a completed chore and award points</p>
+        </header>
+
+        <div class="card">
+            <div id="message" class="message"></div>
+            <div id="toast" class="toast">
+                <div class="toast-icon">✅</div>
+                <div class="toast-content">
+                    <div class="toast-title" id="toastTitle">Success!</div>
+                    <div class="toast-message" id="toastMessage"></div>
+                </div>
+            </div>
+            <div id="loading" class="loading" style="display: none;">Loading...</div>
+
+            <form id="recordChoreForm">
+                <div class="form-group">
+                    <label for="user_id">User *</label>
+                    <select id="user_id" name="user_id" required>
+                        <option value="">Select a user...</option>
+                    </select>
+                    <div id="userBalance" class="user-balance" style="display: none;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="chore_id">Chore *</label>
+                    <div class="searchable-dropdown">
+                        <input type="text" 
+                               id="chore_search" 
+                               class="searchable-dropdown-input" 
+                               placeholder="Search or select a chore..." 
+                               autocomplete="off"
+                               required>
+                        <span class="searchable-dropdown-arrow">▼</span>
+                        <div id="chore_dropdown" class="searchable-dropdown-list"></div>
+                        <input type="hidden" id="chore_id" name="chore_id" required>
+                    </div>
+                    <div class="help-text">Type to search or select a chore to automatically set the point value</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="value">Point Value *</label>
+                    <input type="number" id="value" name="value" required min="1" value="" placeholder="Points to award">
+                    <div class="help-text">Points will be added to the user's balance</div>
+                    
+                    <div id="pointPreview" class="point-preview" style="display: none;">
+                        <div class="point-preview-label">Points to Award</div>
+                        <div class="point-preview-value" id="pointPreviewValue">0</div>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">Record Chore</button>
+                    <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
+                </div>
+            </form>
+        </div>
+        <a href="/" class="back-link">← Home</a>
+    </div>
+
+    <script>
+        let users = [];
+        let chores = [];
+
+        function showMessage(text, isError = false) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + (isError ? 'error' : 'success');
+            messageDiv.style.display = 'block';
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showToast(title, message) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastTitle').textContent = title;
+            document.getElementById('toastMessage').textContent = message;
+            
+            toast.classList.add('show');
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 4000);
+        }
+
+        function resetForm() {
+            document.getElementById('recordChoreForm').reset();
+            document.getElementById('pointPreview').style.display = 'none';
+            document.getElementById('userBalance').style.display = 'none';
+            document.getElementById('message').style.display = 'none';
+            selectedChore = null;
+            document.getElementById('chore_search').value = '';
+            document.getElementById('chore_id').value = '';
+            document.getElementById('chore_dropdown').classList.remove('show');
+            document.querySelectorAll('.searchable-dropdown-item').forEach(item => {
+                item.classList.remove('selected', 'hidden');
+            });
+        }
+
+        function getUrlParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/users');
+                users = await response.json();
+                
+                const userSelect = document.getElementById('user_id');
+                userSelect.innerHTML = '<option value="">Select a user...</option>';
+                
+                users.forEach(user => {
+                    const option = document.createElement('option');
+                    option.value = user.user_id;
+                    option.textContent = `${user.full_name} (Balance: ${user.balance || 0} points)`;
+                    userSelect.appendChild(option);
+                });
+
+                // Pre-select user from URL parameter
+                const userIdParam = getUrlParameter('user_id');
+                if (userIdParam) {
+                    userSelect.value = userIdParam;
+                    // Trigger change event to update balance display
+                    const changeEvent = new Event('change');
+                    userSelect.dispatchEvent(changeEvent);
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+                showMessage('Error loading users. Please refresh the page.', true);
+            }
+        }
+
+        let selectedChore = null;
+
+        async function loadChores() {
+            try {
+                const response = await fetch('/api/chores');
+                chores = await response.json();
+                renderChoreDropdown();
+            } catch (error) {
+                console.error('Error loading chores:', error);
+                showMessage('Error loading chores. Please refresh the page.', true);
+            }
+        }
+
+        function renderChoreDropdown() {
+            const dropdown = document.getElementById('chore_dropdown');
+            dropdown.innerHTML = '';
+            
+            chores.forEach(chore => {
+                const item = document.createElement('div');
+                item.className = 'searchable-dropdown-item';
+                item.dataset.choreId = chore.chore_id;
+                item.dataset.pointValue = chore.point_value;
+                item.textContent = `${chore.chore} (${chore.point_value} points)`;
+                item.addEventListener('click', () => selectChore(chore));
+                dropdown.appendChild(item);
+            });
+        }
+
+        function selectChore(chore) {
+            selectedChore = chore;
+            document.getElementById('chore_search').value = `${chore.chore} (${chore.point_value} points)`;
+            document.getElementById('chore_id').value = chore.chore_id;
+            document.getElementById('chore_dropdown').classList.remove('show');
+            
+            // Update point value
+            document.getElementById('value').value = chore.point_value;
+            updatePointPreview();
+            
+            // Update selected state
+            document.querySelectorAll('.searchable-dropdown-item').forEach(item => {
+                item.classList.remove('selected');
+                if (item.dataset.choreId == chore.chore_id) {
+                    item.classList.add('selected');
+                }
+            });
+        }
+
+        function filterChores(searchTerm) {
+            const term = searchTerm.toLowerCase();
+            document.querySelectorAll('.searchable-dropdown-item').forEach(item => {
+                const text = item.textContent.toLowerCase();
+                if (text.includes(term)) {
+                    item.classList.remove('hidden');
+                } else {
+                    item.classList.add('hidden');
+                }
+            });
+        }
+
+        // Chore dropdown functionality
+        const choreSearch = document.getElementById('chore_search');
+        const choreDropdown = document.getElementById('chore_dropdown');
+        
+        choreSearch.addEventListener('focus', () => {
+            choreDropdown.classList.add('show');
+            filterChores(choreSearch.value);
+        });
+
+        choreSearch.addEventListener('input', (e) => {
+            const value = e.target.value;
+            choreDropdown.classList.add('show');
+            filterChores(value);
+            
+            // Clear selection if input doesn't match selected chore
+            if (selectedChore && !value.includes(selectedChore.chore)) {
+                selectedChore = null;
+                document.getElementById('chore_id').value = '';
+                document.querySelectorAll('.searchable-dropdown-item').forEach(item => {
+                    item.classList.remove('selected');
+                });
+            }
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.searchable-dropdown')) {
+                choreDropdown.classList.remove('show');
+            }
+        });
+
+        // Update point value when chore is selected (handled in selectChore function)
+
+        // Update point preview when value changes
+        document.getElementById('value').addEventListener('input', updatePointPreview);
+
+        function updatePointPreview() {
+            const value = document.getElementById('value').value;
+            if (value && parseInt(value) > 0) {
+                document.getElementById('pointPreviewValue').textContent = value;
+                document.getElementById('pointPreview').style.display = 'block';
+            } else {
+                document.getElementById('pointPreview').style.display = 'none';
+            }
+        }
+
+        // Update user balance display
+        document.getElementById('user_id').addEventListener('change', (e) => {
+            const userId = e.target.value;
+            if (userId) {
+                const user = users.find(u => u.user_id == userId);
+                if (user) {
+                    const balanceDiv = document.getElementById('userBalance');
+                    balanceDiv.textContent = `Current balance: ${user.balance || 0} points`;
+                    balanceDiv.style.display = 'block';
+                }
+            } else {
+                document.getElementById('userBalance').style.display = 'none';
+            }
+        });
+
+        // Form submission
+        document.getElementById('recordChoreForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const data = {
+                user_id: parseInt(formData.get('user_id')),
+                chore_id: formData.get('chore_id') ? parseInt(formData.get('chore_id')) : null,
+                value: parseInt(formData.get('value'))
+            };
+
+            if (!data.user_id) {
+                showMessage('Please select a user', true);
+                return;
+            }
+
+            if (!data.chore_id) {
+                showMessage('Please select a chore', true);
+                return;
+            }
+
+            if (!data.value || data.value < 1) {
+                showMessage('Point value must be a positive number', true);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/transactions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    const user = users.find(u => u.user_id == data.user_id);
+                    const chore = chores.find(c => c.chore_id == data.chore_id);
+                    const userName = user ? user.full_name : 'User';
+                    const choreName = chore ? chore.chore : 'Chore';
+                    
+                    showToast(`"${choreName}" recorded for ${userName}`, `${data.value} points awarded!`);
+                    resetForm();
+                    // Reload users to get updated balances
+                    await loadUsers();
+                } else {
+                    showMessage(result.error || 'Error recording chore', true);
+                }
+            } catch (error) {
+                showMessage('Network error. Please try again.', true);
+                console.error('Error:', error);
+            }
+        });
+
+        // Load data when page loads
+        loadUsers();
+        loadChores();
+    </script>
+</body>
+</html>
+
