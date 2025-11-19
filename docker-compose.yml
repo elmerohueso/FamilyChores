@@ -44,6 +44,3 @@ networks:
   familychores-network:
     name: familychores-network
     driver: bridge
-volumes:
-  db_data:
-  avatar_data:

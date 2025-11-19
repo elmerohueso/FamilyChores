@@ -1,106 +1,82 @@
-# Family Chores - Docker Setup
+# Family Chores
 
-This project includes Docker configuration for easy deployment and development with SQLite database.
+A web application for managing family chores, points, and rewards using Python and PostgreSQL.
 
-## Database Schema
+## Features
 
-The application uses SQLite with 3 tables:
+- **User Management**: Add family members with customizable avatars
+- **Chore Tracking**: Create and manage chores with point values
+- **Point System**: Track points earned from completed chores
+- **Rewards**: Redeem points for media time or cash
+- **Cash Management**: Track cash balances and withdrawals
+- **Transaction History**: View complete history of chores, redemptions, and withdrawals
+- **Role-Based Access**: Separate Kid and Parent interfaces with PIN protection
+- **Automatic Daily Cash Out**: Configurable automatic conversion of points to cash at midnight
+- **Settings Management**: Configure system settings and manage chores list
 
-### 1. `chores` table
-- `chore_id` (INTEGER PRIMARY KEY AUTOINCREMENT)
-- `chore` (TEXT NOT NULL)
-- `point_value` (INTEGER NOT NULL)
-- `repeat` (TEXT)
+#### CSV Import
+- Import multiple chores at once via CSV file
+- CSV format: `chore,point_value,repeat`
+- Null repeat values default to "as_needed"
 
-### 2. `user` table
-- `user_id` (INTEGER PRIMARY KEY AUTOINCREMENT)
-- `full_name` (TEXT NOT NULL)
-- `balance` (INTEGER DEFAULT 0)
+#### Point Redemption
+- Points can be redeemed in multiples of 5
+- 5 points = 30 minutes of media/device time OR $1
+- Redemptions are tracked in the transactions table
 
-### 3. `transactions` table
-- `transaction_id` (INTEGER PRIMARY KEY AUTOINCREMENT)
-- `user_id` (INTEGER NOT NULL, FOREIGN KEY)
-- `chore_id` (INTEGER, FOREIGN KEY)
-- `value` (INTEGER NOT NULL)
-- `timestamp` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+#### Automatic Daily Cash Out
+- **Automatic Daily Cash Out**: When enabled, converts excess points to cash at midnight
+- **Max Rollover Points**: Maximum points to keep in point balance (default: 4)
+- Conversion rate: 5 points = $1
+
+#### Avatar Management
+- Parents can upload custom avatars for each kid
+- Supported formats: PNG, JPG, JPEG, GIF, WEBP
+- Maximum file size: 5MB
+- Avatars are stored persistently in Docker volume
+
+## User Roles
+To prevent kids from tampering with settings or dishonestly marking chores as completed, kids have "read-only" access.
+
+### Kid Role
+- Can view the home page (user list)
+- Can view chores list
+- Can view transaction history
+- Cannot add users, chores, or record transactions
+- Cannot access settings or redeem points
+
+### Parent Role
+- Full access to all features
+- Requires PIN authentication (set via `PARENT_PIN` environment variable)
+- Can manage users, chores, and settings
+- Can record chores, redeem points, and withdraw cash
 
 ## Quick Start
 
+### Prerequisites
+- Docker and Docker Compose installed
+
+### Run using pre-built image
+1. Download docker-compose.yml from this repository
+2. Edit the environment variables, ports, and volumes as desired
+3. Run `docker-compose up` from the directory housing docker-compose.yml
+
+The application will be available at `http://localhost:8000` (or at the specified port)
+
 ### Build and run with Docker Compose
-```bash
-docker-compose up --build
-```
+1. Clone this repository
+2. Edit the environment variables, ports, and volumes in docker-compose-dev.yml as desired
+3. Run `docker-compose -f .\docker-compose-dev.yml up --build` from the directory housing docker-compose-dev.yml
 
-The application will be available at `http://localhost:8000`
+The application will be available at `http://localhost:8000` (or at the specified port)
 
-### Build Docker image manually
-```bash
-docker build -t family-chores .
-docker run -p 8000:8000 family-chores
-```
+#### Environment Variables
+- `POSTGRES_HOST` - PostgreSQL hostname (default: `familychores-db`)
+- `POSTGRES_DATABASE` - Database name (default: `family_chores`)
+- `POSTGRES_USER` - Database user (default: `family_chores`)
+- `POSTGRES_PASSWORD` - Database password (default: `family_chores`)
+- `PARENT_PIN` - PIN required for Parent login (default: `1234`)
 
-### Stop containers
-```bash
-docker-compose down
-```
-
-## API Endpoints
-
-The Flask API provides the following endpoints:
-
-### Chores
-- `GET /api/chores` - Get all chores
-- `POST /api/chores` - Create a new chore
-  ```json
-  {
-    "chore": "Take out trash",
-    "point_value": 5,
-    "repeat": "daily"
-  }
-  ```
-
-### Users
-- `GET /api/users` - Get all users
-- `POST /api/users` - Create a new user
-  ```json
-  {
-    "full_name": "John Doe",
-    "balance": 0
-  }
-  ```
-
-### Transactions
-- `GET /api/transactions` - Get all transactions
-- `POST /api/transactions` - Create a new transaction
-  ```json
-  {
-    "user_id": 1,
-    "chore_id": 1,
-    "value": 5,
-    "timestamp": "2024-01-01T12:00:00"
-  }
-  ```
-
-## Database
-
-The SQLite database file (`family_chores.db`) is created automatically when the application starts. The database is persisted in a Docker volume, so your data will survive container restarts.
-
-### Access database directly
-
-```bash
-# From within the container
-docker-compose exec app sqlite3 family_chores.db
-
-# Or from your host machine (if sqlite3 is installed)
-sqlite3 family_chores.db
-```
-
-### Database location
-
-The database file is stored in the application directory and is persisted via Docker volumes.
-
-## Notes
-
-- The database is automatically initialized when the container starts
-- SQLite is file-based, so the database file is stored in the container volume
-- For production, consider using PostgreSQL or MySQL for better performance and concurrent access
+#### Volumes
+- `db_data`: PostgreSQL data directory
+- `avatar_data`: User avatar images
