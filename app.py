@@ -13,6 +13,11 @@ from functools import wraps
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# Application version
+__version__ = '0.9.1'
+# Github repo URL
+GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
+
 # Database connection configuration from environment variables
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
 POSTGRES_DATABASE = os.environ.get('POSTGRES_DATABASE', 'family_chores')
@@ -112,6 +117,14 @@ def get_role():
     """Get current user role."""
     user_role = session.get('user_role')
     return jsonify({'role': user_role}), 200
+
+@app.route('/api/version', methods=['GET'])
+def get_version():
+    """Get application version and GitHub repo URL."""
+    return jsonify({
+        'version': __version__,
+        'github_url': GITHUB_REPO_URL
+    }), 200
 
 @app.route('/add-user')
 @parent_required
