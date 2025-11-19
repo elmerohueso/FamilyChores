@@ -862,28 +862,42 @@ def daily_cash_out_worker():
     """Background worker that checks for midnight and processes daily cash out."""
     last_processed_date = None
     
+    print("Daily cash out worker thread started")
+    
     while True:
         try:
             now = datetime.now()
             current_date = now.date()
             
-            # Check if it's midnight (or just past) and we haven't processed today
-            if now.hour == 0 and now.minute < 5:  # 5 minute window
+            # Check if it's midnight (00:00 to 00:04) and we haven't processed today
+            if now.hour == 0 and now.minute < 5:
                 if last_processed_date != current_date:
+                    print(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')}")
                     process_daily_cash_out()
                     last_processed_date = current_date
+                    print(f"Daily cash out completed for {current_date}")
             
             # Sleep for 1 minute
             time_module.sleep(60)
         except Exception as e:
             print(f"Error in daily cash out worker: {e}")
+            import traceback
+            traceback.print_exc()
             time_module.sleep(60)
 
 def start_daily_cash_out_scheduler():
     """Start the background thread for daily cash out."""
-    thread = threading.Thread(target=daily_cash_out_worker, daemon=True)
-    thread.start()
-    print("Daily cash out scheduler started")
+    try:
+        thread = threading.Thread(target=daily_cash_out_worker, daemon=True, name="DailyCashOutWorker")
+        thread.start()
+        print("Daily cash out scheduler started successfully")
+    except Exception as e:
+        print(f"Failed to start daily cash out scheduler: {e}")
+        import traceback
+        traceback.print_exc()
+
+# Start the scheduler when module is imported (works in all deployment scenarios)
+start_daily_cash_out_scheduler()
 
 if __name__ == '__main__':
     # Ensure database is initialized
@@ -892,9 +906,6 @@ if __name__ == '__main__':
         init_database()
     except Exception as e:
         print(f"Note: Database initialization check failed (this is OK if tables already exist): {e}")
-    
-    # Start background thread for daily cash out
-    start_daily_cash_out_scheduler()
     
     app.run(host='0.0.0.0', port=8000, debug=True)
 
