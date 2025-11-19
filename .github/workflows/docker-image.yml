@@ -5,11 +5,11 @@ on:
 
 jobs:
   build:
-  runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
-    -name: checkout
-    - uses: actions/checkout@v4
-    - name: build image
-      run: docker build . -t ghcr.io/elmerohueso/familychores:latest
-    - name: push image
-      run: docker push hcr.io/elmerohueso/familychores:latest
+      - name: checkout
+      - uses: actions/checkout@v4
+      - name: build image
+        run: docker build . -t ghcr.io/elmerohueso/familychores:latest
+      - name: push image
+        run: docker push hcr.io/elmerohueso/familychores:latest
