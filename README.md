@@ -1,7 +1,5 @@
 # Family Chores
 
-**Version:** 0.9.1
-
 A web application for managing family chores, points, and rewards using Python and PostgreSQL.
 
 ## Features
