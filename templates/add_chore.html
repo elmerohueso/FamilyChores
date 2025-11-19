@@ -295,7 +295,6 @@
     <div class="container">
         <div class="card">
             <h1>Add Chores</h1>
-            <p class="subtitle">Add chores manually or import from CSV</p>
 
             <div id="message" class="message"></div>
 
@@ -373,7 +372,7 @@
             </div>
         </div>
 
-        <a href="/chores" class="back-link">← Chores</a>
+        <a href="/settings" class="back-link">← Settings</a>
     </div>
 
     <script>
@@ -593,6 +592,22 @@
             document.getElementById('csvPreview').style.display = 'none';
             document.getElementById('importBtn').disabled = true;
         }
+
+        // Check role on page load - redirect kids
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('/api/get-role');
+                const result = await response.json();
+                const role = result.role;
+                
+                if (role !== 'parent') {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Error checking role:', error);
+                window.location.href = '/';
+            }
+        });
     </script>
 </body>
 </html>

@@ -295,7 +295,6 @@
     <div class="container">
         <div class="card">
         <h1>Add New User</h1>
-        <p class="subtitle">Create a new family member in the chores system</p>
 
         <div id="message" class="message"></div>
 
@@ -317,7 +316,7 @@
             </div>
         </form>
 
-        <a href="/users" class="back-link">← Users</a>
+        <a href="/" class="back-link">← Home</a>
     </div>
 
     <script>
@@ -372,6 +371,22 @@
             } catch (error) {
                 showMessage('Network error. Please try again.', true);
                 console.error('Error:', error);
+            }
+        });
+
+        // Check role on page load - redirect kids
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('/api/get-role');
+                const result = await response.json();
+                const role = result.role;
+                
+                if (role !== 'parent') {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Error checking role:', error);
+                window.location.href = '/';
             }
         });
     </script>

@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template, send_from_directory
+from flask import Flask, jsonify, request, render_template, send_from_directory, session, redirect, url_for
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
@@ -8,8 +8,10 @@ from datetime import datetime, timezone
 import uuid
 import threading
 import time as time_module
+from functools import wraps
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Database connection configuration from environment variables
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
@@ -24,6 +26,9 @@ DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST
 # Avatar storage directory
 AVATAR_DIR = '/data/avatars'
 os.makedirs(AVATAR_DIR, exist_ok=True)
+
+# Parent PIN from environment variable
+PARENT_PIN = os.environ.get('PARENT_PIN', '1234')
 
 # Allowed avatar file extensions
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
@@ -47,17 +52,75 @@ def get_system_timestamp():
     # Return as ISO format string with timezone offset
     return now_local.isoformat()
 
+def parent_required(f):
+    """Decorator to require parent role."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user_role = session.get('user_role')
+        if user_role != 'parent':
+            # Redirect to index if not parent
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def kid_or_parent_required(f):
+    """Decorator to require kid or parent role."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user_role = session.get('user_role')
+        if user_role not in ['kid', 'parent']:
+            # Redirect to index if no role set
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/')
 def index():
     """Home page."""
     return render_template('index.html')
 
+@app.route('/api/validate-pin', methods=['POST'])
+def validate_pin():
+    """Validate parent PIN."""
+    data = request.get_json()
+    pin = data.get('pin', '')
+    
+    if pin == PARENT_PIN:
+        session['user_role'] = 'parent'
+        return jsonify({'valid': True, 'message': 'PIN validated successfully'}), 200
+    else:
+        return jsonify({'valid': False, 'error': 'Invalid PIN'}), 401
+
+@app.route('/api/set-role', methods=['POST'])
+def set_role():
+    """Set user role (for kid login)."""
+    data = request.get_json()
+    role = data.get('role', '')
+    
+    if role == '':
+        # Clear role (for logout)
+        session.pop('user_role', None)
+        return jsonify({'success': True, 'message': 'Role cleared'}), 200
+    elif role in ['kid', 'parent']:
+        session['user_role'] = role
+        return jsonify({'success': True, 'message': f'Role set to {role}'}), 200
+    else:
+        return jsonify({'error': 'Invalid role'}), 400
+
+@app.route('/api/get-role', methods=['GET'])
+def get_role():
+    """Get current user role."""
+    user_role = session.get('user_role')
+    return jsonify({'role': user_role}), 200
+
 @app.route('/add-user')
+@parent_required
 def add_user_page():
     """Page to add a new user."""
     return render_template('add_user.html')
 
 @app.route('/add-chore')
+@parent_required
 def add_chore_page():
     """Page to add new chores."""
     return render_template('add_chore.html')
@@ -68,21 +131,25 @@ def users_page():
     return render_template('users.html')
 
 @app.route('/chores')
+@kid_or_parent_required
 def chores_page():
     """Page to view all chores."""
     return render_template('chores.html')
 
 @app.route('/record-chore')
+@parent_required
 def record_chore_page():
     """Page to record a completed chore."""
     return render_template('record_chore.html')
 
 @app.route('/redeem-points')
+@parent_required
 def redeem_points_page():
     """Page to redeem points for rewards."""
     return render_template('redeem_points.html')
 
 @app.route('/withdraw-cash')
+@parent_required
 def withdraw_cash_page():
     """Page to withdraw cash from user's cash balance."""
     return render_template('withdraw_cash.html')
@@ -293,6 +360,7 @@ def get_users():
             COALESCE(cb.cash_balance, 0.0) as cash_balance
         FROM "user" u
         LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
+        ORDER BY u.user_id
     ''')
     users = cursor.fetchall()
     cursor.close()
@@ -422,6 +490,7 @@ def get_transactions():
     return jsonify([dict(transaction) for transaction in transactions])
 
 @app.route('/history')
+@kid_or_parent_required
 def history_page():
     """Page to view transaction history."""
     return render_template('history.html')
@@ -479,7 +548,8 @@ def create_transaction():
         'INSERT INTO transactions (user_id, chore_id, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
         (data['user_id'], data.get('chore_id'), value, transaction_type, timestamp)
     )
-    transaction_id = cursor.fetchone()[0]
+    result = cursor.fetchone()
+    transaction_id = result['transaction_id'] if result else None
     
     # Update user balance
     cursor.execute(
@@ -514,6 +584,7 @@ def create_transaction():
 
 # Settings endpoints
 @app.route('/settings')
+@parent_required
 def settings_page():
     """Page to view and edit settings."""
     return render_template('settings.html')
@@ -692,7 +763,8 @@ def withdraw_cash():
         VALUES (%s, NULL, %s, 'cash_withdrawal', %s)
         RETURNING transaction_id
     ''', (data['user_id'], -amount, get_system_timestamp()))
-    transaction_id = cursor.fetchone()[0]
+    result = cursor.fetchone()
+    transaction_id = result['transaction_id'] if result else None
     
     conn.commit()
     cursor.close()

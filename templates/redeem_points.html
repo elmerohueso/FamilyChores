@@ -391,10 +391,9 @@
     <div class="container">
         <header>
             <div class="header-nav">
-                <a href="/users" class="nav-link nav-link-left">← Users</a>
+                <a href="/" class="nav-link nav-link-left">← Home</a>
             </div>
             <h1>🎁 Redeem Points</h1>
-            <p class="subtitle">Redeem points for rewards</p>
         </header>
 
         <div class="card">
@@ -454,7 +453,6 @@
             </form>
         </div>
 
-        <a href="/" class="back-link">← Home</a>
     </div>
 
     <div id="confirmationPopup" class="confirmation-popup">
@@ -737,6 +735,22 @@
 
         // Load data when page loads
         loadUsers();
+
+        // Check role on page load - redirect kids
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('/api/get-role');
+                const result = await response.json();
+                const role = result.role;
+                
+                if (role !== 'parent') {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Error checking role:', error);
+                window.location.href = '/';
+            }
+        });
     </script>
 </body>
 </html>

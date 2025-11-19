@@ -21,8 +21,9 @@ services:
       timeout: 5s
       retries: 5
   familychores-app:
-    container_name: familychores-app
-    image: elmerohueso/familychores:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - 8000:8000
     volumes:

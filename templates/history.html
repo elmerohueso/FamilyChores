@@ -295,17 +295,16 @@
     <div class="container">
         <header>
             <div class="header-nav">
-                <a href="/users" class="nav-link nav-link-left">← Users</a>
+                <a href="/" class="nav-link nav-link-left">← Home</a>
             </div>
             <h1>💰 Chore & Reward History</h1>
-            <p class="subtitle">View all chores and redemptions</p>
         </header>
 
         <div class="card">
             <div id="loading" class="loading">Loading history...</div>
             <div id="historyContainer" style="display: none;">
                 <div id="userFilterBadge" class="user-filter-badge" style="display: none;">
-                    <span>Showing transactions for: <strong id="filteredUserName"></strong></span>
+                    <span>Showing records for: <strong id="filteredUserName"></strong></span>
                     <a href="/history" class="clear-filter" title="Clear filter">×</a>
                 </div>
                 <div class="search-bar">
@@ -343,12 +342,10 @@
                 </table>
                 <div id="emptyState" class="empty-state" style="display: none;">
                     <div class="empty-state-icon">📋</div>
-                    <div class="empty-state-text">No transactions found</div>
+                    <div class="empty-state-text">No records found</div>
                 </div>
             </div>
         </div>
-
-        <a href="/" class="back-link">← Home</a>
     </div>
 
     <script>
@@ -622,6 +619,23 @@
 
         // Load history when page loads
         loadHistory();
+
+        // Check role on page load - redirect if no role set
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('/api/get-role');
+                const result = await response.json();
+                const role = result.role;
+                
+                // Kids and parents can both access history page
+                if (!role || (role !== 'kid' && role !== 'parent')) {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Error checking role:', error);
+                window.location.href = '/';
+            }
+        });
     </script>
 </body>
 </html>
