@@ -1,10 +1,10 @@
-from flask import Flask, jsonify, request, render_template, send_from_directory, session, redirect, url_for
+from flask import Flask, jsonify, request, render_template, send_from_directory, session, redirect, url_for, has_request_context
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 import threading
 import time as time_module
@@ -20,7 +20,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '0.9.6'
+__version__ = '0.9.7'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -90,6 +90,68 @@ def get_db_connection():
     """Get a database connection with dictionary cursor."""
     conn = psycopg2.connect(DATABASE_URL)
     return conn
+
+def get_client_ip():
+    """Get client IP address from request, handling proxies."""
+    if has_request_context():
+        try:
+            # Check for forwarded IP first (handles reverse proxies)
+            if request.headers.get('X-Forwarded-For'):
+                # X-Forwarded-For can contain multiple IPs, get the first one
+                ip = request.headers.get('X-Forwarded-For').split(',')[0].strip()
+                return ip
+            elif request.headers.get('X-Real-IP'):
+                return request.headers.get('X-Real-IP')
+            else:
+                # Fall back to remote_addr
+                return request.remote_addr if request.remote_addr else 'system'
+        except Exception:
+            return 'system'
+    return 'system'  # No request context (e.g., background threads)
+
+def log_system_event(log_type, message, details=None, status='success', ip_address=None):
+    """Log a system event to the system_log table.
+    
+    Args:
+        log_type: Type of event (e.g., 'settings_saved', 'email_sent', 'cash_out_run', 'error')
+        message: Brief message describing the event
+        details: Optional detailed information (JSON string or dict)
+        status: 'success' or 'error'
+        ip_address: Optional IP address (if None, will try to get from request context)
+    """
+    try:
+        # Get IP address if not provided
+        if ip_address is None:
+            try:
+                ip_address = get_client_ip()
+            except Exception:
+                ip_address = 'unknown'
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Convert details to string if it's a dict
+        if details and isinstance(details, dict):
+            import json
+            details = json.dumps(details)
+        elif details is None:
+            details = ''
+        
+        # Store timestamp in local system time
+        # Get current time in local system timezone as naive datetime (PostgreSQL TIMESTAMP doesn't store timezone)
+        now_local = datetime.now().replace(tzinfo=None)  # Naive datetime in local system time
+        
+        cursor.execute('''
+            INSERT INTO system_log (timestamp, log_type, message, details, status, ip_address)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (now_local, log_type, message, details, status, ip_address))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        # Silently fail to avoid breaking main functionality
+        print(f"Error logging system event: {e}")
 
 def get_system_timestamp():
     """Get current timestamp in system timezone as ISO format string."""
@@ -169,8 +231,23 @@ def validate_pin():
     
     if pin == PARENT_PIN:
         session['user_role'] = 'parent'
+        
+        # Log successful parent login
+        try:
+            ip_address = get_client_ip()
+            log_system_event('login', 'Parent logged in successfully', {'role': 'parent'}, 'success', ip_address)
+        except Exception:
+            pass  # Don't fail if logging fails
+        
         return jsonify({'valid': True, 'message': 'PIN validated successfully'}), 200
     else:
+        # Log failed parent login attempt
+        try:
+            ip_address = get_client_ip()
+            log_system_event('login_failed', 'Failed parent login attempt', {'role': 'parent', 'reason': 'Invalid PIN'}, 'error', ip_address)
+        except Exception:
+            pass  # Don't fail if logging fails
+        
         return jsonify({'valid': False, 'error': 'Invalid PIN'}), 401
 
 @app.route('/api/set-role', methods=['POST'])
@@ -181,12 +258,36 @@ def set_role():
     
     if role == '':
         # Clear role (for logout)
+        old_role = session.get('user_role')
         session.pop('user_role', None)
+        
+        # Log logout event
+        try:
+            ip_address = get_client_ip()
+            log_system_event('logout', 'User logged out', {'role': old_role if old_role else 'unknown'}, 'success', ip_address)
+        except Exception:
+            pass  # Don't fail if logging fails
+        
         return jsonify({'success': True, 'message': 'Role cleared'}), 200
     elif role in ['kid', 'parent']:
         session['user_role'] = role
+        
+        # Log successful login
+        try:
+            ip_address = get_client_ip()
+            log_system_event('login', f'{role.capitalize()} logged in successfully', {'role': role}, 'success', ip_address)
+        except Exception:
+            pass  # Don't fail if logging fails
+        
         return jsonify({'success': True, 'message': f'Role set to {role}'}), 200
     else:
+        # Log failed login attempt (invalid role)
+        try:
+            ip_address = get_client_ip()
+            log_system_event('login_failed', 'Failed login attempt', {'role': role, 'reason': 'Invalid role'}, 'error', ip_address)
+        except Exception:
+            pass  # Don't fail if logging fails
+        
         return jsonify({'error': 'Invalid role'}), 400
 
 @app.route('/api/get-role', methods=['GET'])
@@ -263,12 +364,21 @@ def delete_chore(chore_id):
     cursor = conn.cursor()
     
     try:
-        # First, check if chore exists
-        cursor.execute('SELECT chore_id FROM chores WHERE chore_id = %s', (chore_id,))
-        if not cursor.fetchone():
+        # First, check if chore exists and get chore name for logging
+        cursor.execute('SELECT chore FROM chores WHERE chore_id = %s', (chore_id,))
+        chore_result = cursor.fetchone()
+        if not chore_result:
             cursor.close()
             conn.close()
+            # Log error
+            try:
+                log_system_event('chore_deleted', f'Failed to delete chore: Chore not found', 
+                                {'chore_id': chore_id}, 'error')
+            except Exception:
+                pass
             return jsonify({'error': 'Chore not found'}), 404
+        
+        chore_name = chore_result[0]  # Get chore name from result
         
         # Delete the chore (transactions keep their original description)
         cursor.execute('DELETE FROM chores WHERE chore_id = %s', (chore_id,))
@@ -277,12 +387,28 @@ def delete_chore(chore_id):
         cursor.close()
         conn.close()
         
+        # Log successful deletion
+        try:
+            log_system_event('chore_deleted', f'Chore deleted: {chore_name}', 
+                            {'chore_id': chore_id, 'chore': chore_name}, 'success')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
         return jsonify({'message': 'Chore deleted successfully'}), 200
     except Exception as e:
+        error_msg = str(e)
         conn.rollback()
         cursor.close()
         conn.close()
-        return jsonify({'error': f'Error deleting chore: {str(e)}'}), 500
+        
+        # Log deletion error
+        try:
+            log_system_event('chore_deleted', f'Error deleting chore: {error_msg}', 
+                            {'chore_id': chore_id, 'error': error_msg}, 'error')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'error': f'Error deleting chore: {error_msg}'}), 500
 
 @app.route('/api/chores/<int:chore_id>', methods=['PUT'])
 def update_chore(chore_id):
@@ -309,46 +435,117 @@ def update_chore(chore_id):
             repeat_value = 'as_needed'
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Build update query dynamically based on provided fields
-    updates = []
-    params = []
-    
-    if 'chore' in data:
-        updates.append('chore = %s')
-        params.append(data['chore'])
-    
-    if point_value is not None:
-        updates.append('point_value = %s')
-        params.append(point_value)
-    
-    if 'repeat' in data:
-        updates.append('"repeat" = %s')
-        params.append(repeat_value)
-    
-    if not updates:
+    # Get current chore values for comparison
+    cursor.execute('SELECT chore, point_value, "repeat" FROM chores WHERE chore_id = %s', (chore_id,))
+    chore_result = cursor.fetchone()
+    if not chore_result:
         cursor.close()
         conn.close()
-        return jsonify({'error': 'No fields to update'}), 400
-    
-    params.append(chore_id)
-    
-    cursor.execute(
-        f'UPDATE chores SET {", ".join(updates)} WHERE chore_id = %s',
-        params
-    )
-    
-    if cursor.rowcount == 0:
-        cursor.close()
-        conn.close()
+        # Log error
+        try:
+            log_system_event('chore_edited', f'Failed to update chore: Chore not found', 
+                            {'chore_id': chore_id}, 'error')
+        except Exception:
+            pass
         return jsonify({'error': 'Chore not found'}), 404
     
-    conn.commit()
-    cursor.close()
-    conn.close()
+    old_chore_name = chore_result['chore']
+    old_point_value = chore_result.get('point_value')
+    old_repeat = chore_result.get('repeat')
     
-    return jsonify({'message': 'Chore updated successfully'}), 200
+    # Track changed fields for logging (with old and new values)
+    changed_fields = {}
+    
+    cursor.close()
+    
+    # Switch to regular cursor for updates
+    cursor = conn.cursor()
+    
+    try:
+        # Build update query dynamically based on provided fields
+        updates = []
+        params = []
+        
+        if 'chore' in data:
+            new_chore_name = data['chore']
+            if new_chore_name != old_chore_name:
+                changed_fields['chore'] = {'old': old_chore_name, 'new': new_chore_name}
+            updates.append('chore = %s')
+            params.append(new_chore_name)
+        
+        if point_value is not None:
+            if point_value != old_point_value:
+                changed_fields['point_value'] = {'old': old_point_value, 'new': point_value}
+            updates.append('point_value = %s')
+            params.append(point_value)
+        
+        if 'repeat' in data:
+            # Normalize repeat value for comparison
+            old_repeat_normalized = old_repeat if old_repeat else 'as_needed'
+            if repeat_value != old_repeat_normalized:
+                changed_fields['repeat'] = {'old': old_repeat_normalized, 'new': repeat_value}
+            updates.append('"repeat" = %s')
+            params.append(repeat_value)
+        
+        if not updates:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'No fields to update'}), 400
+        
+        params.append(chore_id)
+        
+        cursor.execute(
+            f'UPDATE chores SET {", ".join(updates)} WHERE chore_id = %s',
+            params
+        )
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            # Log error
+            try:
+                log_system_event('chore_edited', f'Failed to update chore: Chore not found after update attempt', 
+                                {'chore_id': chore_id}, 'error')
+            except Exception:
+                pass
+            return jsonify({'error': 'Chore not found'}), 404
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        # Log chore update - only include chore name and changed fields
+        try:
+            # Get the final chore name (could have changed)
+            final_chore_name = data.get('chore', old_chore_name)
+            log_details = {'chore': final_chore_name}
+            
+            # Only include changed fields in details
+            if changed_fields:
+                log_details.update(changed_fields)
+            
+            log_system_event('chore_edited', f'Chore updated: {final_chore_name}', 
+                            log_details, 'success')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'message': 'Chore updated successfully'}), 200
+    except Exception as e:
+        error_msg = str(e)
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        
+        # Log update error
+        try:
+            log_system_event('chore_edited', f'Error updating chore: {error_msg}', 
+                            {'chore_id': chore_id, 'error': error_msg}, 'error')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'error': f'Error updating chore: {error_msg}'}), 500
 
 @app.route('/api/chores', methods=['POST'])
 def create_chore():
@@ -389,15 +586,39 @@ def create_chore():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        'INSERT INTO chores (chore, point_value, "repeat") VALUES (%s, %s, %s) RETURNING chore_id',
-        (data['chore'], point_value, repeat_value)
-    )
-    chore_id = cursor.fetchone()[0]
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return jsonify({'chore_id': chore_id, 'message': 'Chore created successfully'}), 201
+    
+    try:
+        cursor.execute(
+            'INSERT INTO chores (chore, point_value, "repeat") VALUES (%s, %s, %s) RETURNING chore_id',
+            (data['chore'], point_value, repeat_value)
+        )
+        chore_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        # Log chore creation
+        try:
+            log_system_event('chore_added', f'Chore created: {data["chore"]}', 
+                            {'chore_id': chore_id, 'chore': data['chore'], 'point_value': point_value, 'repeat': repeat_value}, 'success')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'chore_id': chore_id, 'message': 'Chore created successfully'}), 201
+    except Exception as e:
+        error_msg = str(e)
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        
+        # Log creation error
+        try:
+            log_system_event('chore_added', f'Error creating chore: {error_msg}', 
+                            {'chore': data.get('chore', ''), 'error': error_msg}, 'error')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'error': f'Error creating chore: {error_msg}'}), 500
 
 @app.route('/api/chores/import', methods=['POST'])
 def import_chores():
@@ -453,15 +674,38 @@ def import_chores():
             errors += 1
             print(f"Error importing chore: {e}")
     
-    conn.commit()
-    cursor.close()
-    conn.close()
-    
-    return jsonify({
-        'imported': imported,
-        'errors': errors,
-        'message': f'Imported {imported} chore(s)'
-    }), 201
+    try:
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        # Log chore import
+        try:
+            status = 'success' if errors == 0 else 'error' if imported == 0 else 'success'
+            log_system_event('chore_imported', f'Chores imported: {imported} successful, {errors} errors', 
+                            {'imported': imported, 'errors': errors, 'total': len(chores)}, status)
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({
+            'imported': imported,
+            'errors': errors,
+            'message': f'Imported {imported} chore(s)'
+        }), 201
+    except Exception as e:
+        error_msg = str(e)
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        
+        # Log import error
+        try:
+            log_system_event('chore_imported', f'Error during chore import: {error_msg}', 
+                            {'imported': imported, 'errors': errors, 'total': len(chores), 'error': error_msg}, 'error')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'error': f'Error importing chores: {error_msg}'}), 500
 
 # User endpoints
 @app.route('/api/users', methods=['GET'])
@@ -534,12 +778,24 @@ def upload_avatar(user_id):
             except:
                 pass  # Ignore errors deleting old file
     
+    # Get user name for logging
+    cursor.execute('SELECT full_name FROM "user" WHERE user_id = %s', (user_id,))
+    user_result = cursor.fetchone()
+    user_name = user_result.get('full_name') if user_result else f'User {user_id}'
+    
     # Update database
     relative_path = os.path.join('avatars', filename)
     cursor.execute('UPDATE "user" SET avatar_path = %s WHERE user_id = %s', (relative_path, user_id))
     conn.commit()
     cursor.close()
     conn.close()
+    
+    # Log avatar upload
+    try:
+        log_system_event('avatar_uploaded', f'Avatar uploaded for {user_name}', 
+                        {'user_id': user_id, 'user_name': user_name, 'filename': filename}, 'success')
+    except Exception:
+        pass  # Don't fail if logging fails
     
     return jsonify({
         'avatar_path': relative_path,
@@ -570,15 +826,39 @@ def create_user():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        'INSERT INTO "user" (full_name, balance) VALUES (%s, %s) RETURNING user_id',
-        (data['full_name'], data.get('balance', 0))
-    )
-    user_id = cursor.fetchone()[0]
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return jsonify({'user_id': user_id, 'message': 'User created successfully'}), 201
+    
+    try:
+        cursor.execute(
+            'INSERT INTO "user" (full_name, balance) VALUES (%s, %s) RETURNING user_id',
+            (data['full_name'], data.get('balance', 0))
+        )
+        user_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        # Log user creation
+        try:
+            log_system_event('user_added', f'User created: {data["full_name"]}', 
+                            {'user_id': user_id, 'full_name': data['full_name'], 'balance': data.get('balance', 0)}, 'success')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'user_id': user_id, 'message': 'User created successfully'}), 201
+    except Exception as e:
+        error_msg = str(e)
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        
+        # Log creation error
+        try:
+            log_system_event('user_added', f'Error creating user: {error_msg}', 
+                            {'full_name': data.get('full_name', ''), 'error': error_msg}, 'error')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'error': f'Error creating user: {error_msg}'}), 500
 
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
 @parent_required
@@ -587,13 +867,21 @@ def delete_user(user_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Check if user exists
-    cursor.execute('SELECT avatar_path FROM "user" WHERE user_id = %s', (user_id,))
+    # Check if user exists and get user name for logging
+    cursor.execute('SELECT full_name, avatar_path FROM "user" WHERE user_id = %s', (user_id,))
     user = cursor.fetchone()
     if not user:
         cursor.close()
         conn.close()
+        # Log error
+        try:
+            log_system_event('user_deleted', f'Failed to delete user: User not found', 
+                            {'user_id': user_id}, 'error')
+        except Exception:
+            pass
         return jsonify({'error': 'User not found'}), 404
+    
+    user_name = user['full_name']
     
     # Delete avatar file if exists
     if user.get('avatar_path'):
@@ -617,6 +905,13 @@ def delete_user(user_id):
     conn.commit()
     cursor.close()
     conn.close()
+    
+    # Log successful deletion
+    try:
+        log_system_event('user_deleted', f'User deleted: {user_name}', 
+                        {'user_id': user_id, 'full_name': user_name}, 'success')
+    except Exception:
+        pass  # Don't fail if logging fails
     
     return jsonify({'message': 'User deleted successfully'}), 200
 
@@ -938,6 +1233,20 @@ def create_transaction():
     cursor.close()
     conn.close()
     
+    # Log transaction creation (for important transaction types)
+    try:
+        if transaction_type == 'chore_completed':
+            log_system_event('transaction_created', f'{user_name} completed: {description}', 
+                            {'user_id': data['user_id'], 'user_name': user_name, 'transaction_type': transaction_type,
+                             'description': description, 'value': value, 'transaction_id': transaction_id}, 'success')
+        elif transaction_type == 'points_redemption':
+            log_system_event('transaction_created', f'{user_name} redeemed points: {description}', 
+                            {'user_id': data['user_id'], 'user_name': user_name, 'transaction_type': transaction_type,
+                             'description': description, 'points_redeemed': abs(value), 'transaction_id': transaction_id}, 'success')
+        # Note: cash_withdrawal is logged in withdraw_cash() function
+    except Exception:
+        pass  # Don't fail if logging fails
+    
     # Send email notifications if enabled
     if transaction_type == 'chore_completed':
         send_notification_email('chore_completed', user_name, description, value, data['user_id'])
@@ -995,10 +1304,24 @@ def update_settings():
     data = request.get_json()
     
     conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # Get current settings to compare for logging
+    cursor.execute('SELECT setting_key, setting_value FROM settings')
+    current_settings = {row['setting_key']: row['setting_value'] for row in cursor.fetchall()}
+    cursor.close()
+    
+    # Track changed settings for logging
+    changed_settings = {}
+    
+    # Switch to regular cursor for updates
     cursor = conn.cursor()
     
     if 'automatic_daily_cash_out' in data:
         value = '1' if data['automatic_daily_cash_out'] else '0'
+        old_value = current_settings.get('automatic_daily_cash_out', '0')
+        if str(value) != str(old_value):
+            changed_settings['automatic_daily_cash_out'] = {'old': old_value == '1', 'new': data['automatic_daily_cash_out']}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('automatic_daily_cash_out', %s)
@@ -1012,6 +1335,9 @@ def update_settings():
                 cursor.close()
                 conn.close()
                 return jsonify({'error': 'Max rollover points must be non-negative'}), 400
+            old_value = current_settings.get('max_rollover_points', '4')
+            if str(max_points) != str(old_value):
+                changed_settings['max_rollover_points'] = {'old': int(old_value), 'new': max_points}
             cursor.execute('''
                 INSERT INTO settings (setting_key, setting_value)
                 VALUES ('max_rollover_points', %s)
@@ -1030,6 +1356,9 @@ def update_settings():
                 cursor.close()
                 conn.close()
                 return jsonify({'error': 'Daily cooldown hours must be non-negative'}), 400
+            old_value = current_settings.get('daily_cooldown_hours', '12')
+            if str(daily_hours) != str(old_value):
+                changed_settings['daily_cooldown_hours'] = {'old': int(old_value), 'new': daily_hours}
             cursor.execute('''
                 INSERT INTO settings (setting_key, setting_value)
                 VALUES ('daily_cooldown_hours', %s)
@@ -1047,6 +1376,9 @@ def update_settings():
                 cursor.close()
                 conn.close()
                 return jsonify({'error': 'Weekly cooldown days must be non-negative'}), 400
+            old_value = current_settings.get('weekly_cooldown_days', '4')
+            if str(weekly_days) != str(old_value):
+                changed_settings['weekly_cooldown_days'] = {'old': int(old_value), 'new': weekly_days}
             cursor.execute('''
                 INSERT INTO settings (setting_key, setting_value)
                 VALUES ('weekly_cooldown_days', %s)
@@ -1064,6 +1396,9 @@ def update_settings():
                 cursor.close()
                 conn.close()
                 return jsonify({'error': 'Monthly cooldown days must be non-negative'}), 400
+            old_value = current_settings.get('monthly_cooldown_days', '14')
+            if str(monthly_days) != str(old_value):
+                changed_settings['monthly_cooldown_days'] = {'old': int(old_value), 'new': monthly_days}
             cursor.execute('''
                 INSERT INTO settings (setting_key, setting_value)
                 VALUES ('monthly_cooldown_days', %s)
@@ -1077,6 +1412,9 @@ def update_settings():
     # Handle kid permission settings
     if 'kid_allowed_record_chore' in data:
         value = '1' if data['kid_allowed_record_chore'] else '0'
+        old_value = current_settings.get('kid_allowed_record_chore', '0')
+        if value != old_value:
+            changed_settings['kid_allowed_record_chore'] = {'old': old_value == '1', 'new': data['kid_allowed_record_chore']}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('kid_allowed_record_chore', %s)
@@ -1085,6 +1423,9 @@ def update_settings():
     
     if 'kid_allowed_redeem_points' in data:
         value = '1' if data['kid_allowed_redeem_points'] else '0'
+        old_value = current_settings.get('kid_allowed_redeem_points', '0')
+        if value != old_value:
+            changed_settings['kid_allowed_redeem_points'] = {'old': old_value == '1', 'new': data['kid_allowed_redeem_points']}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('kid_allowed_redeem_points', %s)
@@ -1093,6 +1434,9 @@ def update_settings():
     
     if 'kid_allowed_withdraw_cash' in data:
         value = '1' if data['kid_allowed_withdraw_cash'] else '0'
+        old_value = current_settings.get('kid_allowed_withdraw_cash', '0')
+        if value != old_value:
+            changed_settings['kid_allowed_withdraw_cash'] = {'old': old_value == '1', 'new': data['kid_allowed_withdraw_cash']}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('kid_allowed_withdraw_cash', %s)
@@ -1101,6 +1445,9 @@ def update_settings():
     
     if 'kid_allowed_view_history' in data:
         value = '1' if data['kid_allowed_view_history'] else '0'
+        old_value = current_settings.get('kid_allowed_view_history', '0')
+        if value != old_value:
+            changed_settings['kid_allowed_view_history'] = {'old': old_value == '1', 'new': data['kid_allowed_view_history']}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('kid_allowed_view_history', %s)
@@ -1109,11 +1456,15 @@ def update_settings():
     
     # Handle email settings
     if 'email_smtp_server' in data:
+        new_value = data['email_smtp_server'] or ''
+        old_value = current_settings.get('email_smtp_server', '')
+        if new_value != old_value:
+            changed_settings['email_smtp_server'] = {'old': old_value, 'new': new_value}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('email_smtp_server', %s)
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (data['email_smtp_server'] or '',))
+        ''', (new_value,))
     
     if 'email_smtp_port' in data:
         try:
@@ -1122,26 +1473,38 @@ def update_settings():
                 cursor.close()
                 conn.close()
                 return jsonify({'error': 'SMTP port must be a number'}), 400
+            new_value = smtp_port or '587'
+            old_value = current_settings.get('email_smtp_port', '587')
+            if new_value != old_value:
+                changed_settings['email_smtp_port'] = {'old': old_value, 'new': new_value}
             cursor.execute('''
                 INSERT INTO settings (setting_key, setting_value)
                 VALUES ('email_smtp_port', %s)
                 ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (smtp_port or '587',))
+            ''', (new_value,))
         except (ValueError, TypeError):
             cursor.close()
             conn.close()
             return jsonify({'error': 'SMTP port must be a number'}), 400
     
     if 'email_username' in data:
+        new_value = data['email_username'] or ''
+        old_value = current_settings.get('email_username', '')
+        if new_value != old_value:
+            changed_settings['email_username'] = {'old': old_value, 'new': new_value}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('email_username', %s)
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (data['email_username'] or '',))
+        ''', (new_value,))
     
     if 'email_password' in data:
         # Only update password if provided (not empty)
         if data['email_password']:
+            # If password is provided, treat it as changed (can't compare encrypted values)
+            # But don't show the actual value in logs - show old value if exists
+            old_password_exists = bool(current_settings.get('email_password', ''))
+            changed_settings['email_password'] = {'old': '<set>' if old_password_exists else '<not set>', 'new': '<changed>'}
             # Encrypt the password before storing
             encrypted_password = encrypt_password(data['email_password'])
             cursor.execute('''
@@ -1153,6 +1516,9 @@ def update_settings():
     # Handle email notification toggles
     if 'email_notify_chore_completed' in data:
         value = '1' if data['email_notify_chore_completed'] else '0'
+        old_value = current_settings.get('email_notify_chore_completed', '0')
+        if value != old_value:
+            changed_settings['email_notify_chore_completed'] = {'old': old_value == '1', 'new': data['email_notify_chore_completed']}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('email_notify_chore_completed', %s)
@@ -1161,6 +1527,9 @@ def update_settings():
     
     if 'email_notify_points_redeemed' in data:
         value = '1' if data['email_notify_points_redeemed'] else '0'
+        old_value = current_settings.get('email_notify_points_redeemed', '0')
+        if value != old_value:
+            changed_settings['email_notify_points_redeemed'] = {'old': old_value == '1', 'new': data['email_notify_points_redeemed']}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('email_notify_points_redeemed', %s)
@@ -1169,6 +1538,9 @@ def update_settings():
     
     if 'email_notify_cash_withdrawn' in data:
         value = '1' if data['email_notify_cash_withdrawn'] else '0'
+        old_value = current_settings.get('email_notify_cash_withdrawn', '0')
+        if value != old_value:
+            changed_settings['email_notify_cash_withdrawn'] = {'old': old_value == '1', 'new': data['email_notify_cash_withdrawn']}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('email_notify_cash_withdrawn', %s)
@@ -1176,22 +1548,40 @@ def update_settings():
         ''', (value,))
     
     if 'email_sender_name' in data:
+        new_value = data['email_sender_name'] or 'Family Chores'
+        old_value = current_settings.get('email_sender_name', 'Family Chores')
+        if new_value != old_value:
+            changed_settings['email_sender_name'] = {'old': old_value, 'new': new_value}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('email_sender_name', %s)
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (data['email_sender_name'] or 'Family Chores',))
+        ''', (new_value,))
     
     if 'parent_email_addresses' in data:
+        new_value = data['parent_email_addresses'] or ''
+        old_value = current_settings.get('parent_email_addresses', '')
+        if new_value != old_value:
+            changed_settings['parent_email_addresses'] = {'old': old_value, 'new': new_value}
         cursor.execute('''
             INSERT INTO settings (setting_key, setting_value)
             VALUES ('parent_email_addresses', %s)
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (data['parent_email_addresses'] or '',))
+        ''', (new_value,))
     
     conn.commit()
     cursor.close()
     conn.close()
+    
+    # Log settings save with only changed settings
+    try:
+        if changed_settings:
+            log_system_event('settings_saved', 'Settings updated successfully', changed_settings, 'success')
+        else:
+            # No actual changes (all values were the same)
+            log_system_event('settings_saved', 'Settings saved (no changes)', {}, 'success')
+    except Exception:
+        pass  # Don't fail if logging fails
     
     return jsonify({'message': 'Settings updated successfully'}), 200
 
@@ -1199,10 +1589,25 @@ def update_settings():
 def manual_daily_cash_out():
     """Manually trigger daily cash out process."""
     try:
-        process_daily_cash_out()
+        # Log manual trigger (process_daily_cash_out will also log with trigger_type)
+        try:
+            log_system_event('cash_out_manual', 'Manual daily cash out triggered', {}, 'success')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        process_daily_cash_out(triggered_manually=True)
         return jsonify({'message': 'Daily cash out processed successfully'}), 200
     except Exception as e:
-        return jsonify({'error': f'Error processing daily cash out: {str(e)}'}), 500
+        error_msg = str(e)
+        
+        # Log manual trigger error
+        try:
+            log_system_event('cash_out_manual', f'Error during manual daily cash out: {error_msg}', 
+                            {'error': error_msg}, 'error')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'error': f'Error processing daily cash out: {error_msg}'}), 500
 
 @app.route('/api/reset-points', methods=['POST'])
 def reset_points():
@@ -1211,12 +1616,30 @@ def reset_points():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('UPDATE "user" SET balance = 0')
+        affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
         conn.close()
+        
+        # Log points reset
+        try:
+            log_system_event('points_reset', f'All points balances reset to 0 for {affected_users} user(s)', 
+                            {'affected_users': affected_users}, 'success')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
         return jsonify({'message': 'All points balances have been reset to 0'}), 200
     except Exception as e:
-        return jsonify({'error': f'Error resetting points balances: {str(e)}'}), 500
+        error_msg = str(e)
+        
+        # Log reset error
+        try:
+            log_system_event('points_reset', f'Error resetting points balances: {error_msg}', 
+                            {'error': error_msg}, 'error')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'error': f'Error resetting points balances: {error_msg}'}), 500
 
 @app.route('/api/reset-cash', methods=['POST'])
 def reset_cash():
@@ -1225,11 +1648,30 @@ def reset_cash():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('UPDATE cash_balances SET cash_balance = 0.0')
+        affected_users = cursor.rowcount
         conn.commit()
+        cursor.close()
         conn.close()
+        
+        # Log cash reset
+        try:
+            log_system_event('cash_reset', f'All cash balances reset to $0.00 for {affected_users} user(s)', 
+                            {'affected_users': affected_users}, 'success')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
         return jsonify({'message': 'All cash balances have been reset to $0.00'}), 200
     except Exception as e:
-        return jsonify({'error': f'Error resetting cash balances: {str(e)}'}), 500
+        error_msg = str(e)
+        
+        # Log reset error
+        try:
+            log_system_event('cash_reset', f'Error resetting cash balances: {error_msg}', 
+                            {'error': error_msg}, 'error')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'error': f'Error resetting cash balances: {error_msg}'}), 500
 
 @app.route('/api/reset-transactions', methods=['POST'])
 def reset_transactions():
@@ -1237,13 +1679,35 @@ def reset_transactions():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        # Get count before deletion for logging
+        cursor.execute('SELECT COUNT(*) as total FROM transactions')
+        count_result = cursor.fetchone()
+        total_transactions = count_result[0] if count_result else 0
+        
         cursor.execute('DELETE FROM transactions')
         conn.commit()
         cursor.close()
         conn.close()
+        
+        # Log transactions reset
+        try:
+            log_system_event('transactions_reset', f'All transactions deleted ({total_transactions} transaction(s))', 
+                            {'deleted_count': total_transactions}, 'success')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
         return jsonify({'message': 'All transactions have been deleted'}), 200
     except Exception as e:
-        return jsonify({'error': f'Error deleting transactions: {str(e)}'}), 500
+        error_msg = str(e)
+        
+        # Log reset error
+        try:
+            log_system_event('transactions_reset', f'Error deleting transactions: {error_msg}', 
+                            {'error': error_msg}, 'error')
+        except Exception:
+            pass  # Don't fail if logging fails
+        
+        return jsonify({'error': f'Error deleting transactions: {error_msg}'}), 500
 
 def send_email(to_email, subject, body_html, body_text=None):
     """Send an email using SMTP settings from the database.
@@ -1302,18 +1766,43 @@ def send_email(to_email, subject, body_html, body_text=None):
             server.login(username, password)
             server.send_message(msg)
             server.quit()
+            
+            # Log successful email send
+            try:
+                log_system_event('email_sent', f'Email sent to {to_email}', {'to': to_email, 'subject': subject}, 'success')
+            except Exception:
+                pass  # Don't fail if logging fails
+            
             return True, "Email sent successfully"
         except smtplib.SMTPAuthenticationError:
             return False, "SMTP authentication failed. Please check your username and password."
         except smtplib.SMTPConnectError:
             return False, f"Could not connect to SMTP server {smtp_server}:{smtp_port}. Please check your SMTP settings."
         except smtplib.SMTPException as e:
-            return False, f"SMTP error: {str(e)}"
+            error_msg = f"SMTP error: {str(e)}"
+            # Log email error
+            try:
+                log_system_event('email_error', f'Failed to send email to {to_email}', {'to': to_email, 'subject': subject, 'error': error_msg}, 'error')
+            except Exception:
+                pass
+            return False, error_msg
         except Exception as e:
-            return False, f"Error sending email: {str(e)}"
+            error_msg = f"Error sending email: {str(e)}"
+            # Log email error
+            try:
+                log_system_event('email_error', f'Failed to send email to {to_email}', {'to': to_email, 'subject': subject, 'error': error_msg}, 'error')
+            except Exception:
+                pass
+            return False, error_msg
     
     except Exception as e:
-        return False, f"Error: {str(e)}"
+        error_msg = f"Error: {str(e)}"
+        # Log email error
+        try:
+            log_system_event('email_error', f'Failed to send email to {to_email}', {'to': to_email, 'subject': subject, 'error': error_msg}, 'error')
+        except Exception:
+            pass
+        return False, error_msg
 
 @app.route('/api/send-test-email', methods=['POST'])
 @parent_required
@@ -1386,6 +1875,24 @@ Sent from Family Chores application
             success_count += 1
         else:
             error_messages.append(f'{email}: {message}')
+    
+    # Log test email results
+    try:
+        if success_count == len(email_list):
+            status = 'success'
+            message = f'Test email sent successfully to {success_count} address(es)'
+        elif success_count > 0:
+            status = 'error'
+            message = f'Partially sent: {success_count}/{len(email_list)} successful'
+        else:
+            status = 'error'
+            message = f'Failed to send test email to all addresses'
+        
+        log_system_event('test_email', message, 
+                        {'recipients': email_list, 'success_count': success_count, 'total': len(email_list), 
+                         'errors': error_messages if error_messages else []}, status)
+    except Exception:
+        pass  # Don't fail if logging fails
     
     if success_count == len(email_list):
         return jsonify({'message': f'Test email sent successfully to {success_count} address(es)'}), 200
@@ -1471,6 +1978,14 @@ def withdraw_cash():
     cursor.close()
     conn.close()
     
+    # Log cash withdrawal
+    try:
+        log_system_event('cash_withdrawn', f'{user_name} withdrew ${amount:.2f}', 
+                        {'user_id': data['user_id'], 'user_name': user_name, 'amount': amount, 
+                         'old_balance': current_cash, 'new_balance': current_cash - amount, 'transaction_id': transaction_id}, 'success')
+    except Exception:
+        pass  # Don't fail if logging fails
+    
     # Send email notification if enabled
     send_notification_email('cash_withdrawn', user_name, f'Cash withdrawal of ${amount:.2f}', amount, data['user_id'])
     
@@ -1497,8 +2012,12 @@ def get_setting(key, default):
         return result.get('setting_value')
     return default
 
-def process_daily_cash_out():
-    """Process daily cash out for all users at midnight."""
+def process_daily_cash_out(triggered_manually=False):
+    """Process daily cash out for all users at midnight.
+    
+    Args:
+        triggered_manually: True if triggered manually, False if triggered by timer
+    """
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
@@ -1561,12 +2080,60 @@ def process_daily_cash_out():
     conn.commit()
     cursor.close()
     conn.close()
+    
+    # Log cash out processing
+    try:
+        processed_count = len(users)
+        trigger_type = 'manual' if triggered_manually else 'automatic (timer)'
+        log_system_event('cash_out_run', f'Daily cash out processed for {processed_count} user(s) ({trigger_type})', 
+                        {'user_count': processed_count, 'triggered_manually': triggered_manually, 'trigger_type': trigger_type,
+                         'automatic_cash_out_enabled': automatic_cash_out, 'max_rollover': max_rollover}, 'success')
+    except Exception:
+        pass  # Don't fail if logging fails
+    
     print(f"Daily cash out processed at {datetime.now()}")
+
+def get_last_daily_cash_out_date():
+    """Get the last date when daily cash out was processed from database."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', ('last_daily_cash_out_date',))
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if result and result.get('setting_value'):
+            return datetime.strptime(result['setting_value'], '%Y-%m-%d').date()
+        return None
+    except Exception as e:
+        print(f"Error getting last daily cash out date: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def set_last_daily_cash_out_date(date):
+    """Store the last date when daily cash out was processed in database."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        date_str = date.strftime('%Y-%m-%d')
+        cursor.execute('''
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('last_daily_cash_out_date', %s)
+            ON CONFLICT (setting_key) 
+            DO UPDATE SET setting_value = %s
+        ''', (date_str, date_str))
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error setting last daily cash out date: {e}")
+        import traceback
+        traceback.print_exc()
 
 def daily_cash_out_worker():
     """Background worker that checks for midnight and processes daily cash out."""
-    last_processed_date = None
-    
     print("Daily cash out worker thread started")
     
     while True:
@@ -1574,20 +2141,65 @@ def daily_cash_out_worker():
             now = datetime.now()
             current_date = now.date()
             
-            # Check if it's midnight (00:00 to 00:04) and we haven't processed today
-            if now.hour == 0 and now.minute < 5:
+            # Get last processed date from database (persisted across restarts)
+            last_processed_date = get_last_daily_cash_out_date()
+            
+            # Determine if we need to process
+            should_process = False
+            process_date = current_date
+            reason = ""
+            
+            # Check if we need to process today
+            # Process if:
+            # 1. It's between 00:00 and 01:00 (wider window for reliability)
+            # 2. We haven't processed today yet
+            if now.hour == 0:
                 if last_processed_date != current_date:
-                    print(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')}")
+                    should_process = True
+                    reason = f"Regular midnight processing for {current_date}"
+            # Recovery check: If it's early morning (1:00-1:05) and we missed yesterday, process it
+            elif now.hour == 1 and now.minute < 5:
+                yesterday = current_date - timedelta(days=1)
+                if last_processed_date != current_date and last_processed_date != yesterday:
+                    should_process = True
+                    process_date = yesterday
+                    reason = f"Recovery processing for {yesterday} (missed yesterday)"
+            
+            if should_process:
+                print(f"Triggering daily cash out at {now.strftime('%Y-%m-%d %H:%M:%S')}: {reason}")
+                try:
                     process_daily_cash_out()
-                    last_processed_date = current_date
-                    print(f"Daily cash out completed for {current_date}")
+                    # Store the date we just processed
+                    set_last_daily_cash_out_date(process_date)
+                    print(f"Daily cash out completed for {process_date}")
+                except Exception as e:
+                    error_msg = str(e)
+                    print(f"Error during daily cash out processing: {error_msg}")
+                    import traceback
+                    traceback.print_exc()
+                    
+                    # Log cash out error
+                    try:
+                        log_system_event('cash_out_error', f'Error during daily cash out: {error_msg}', 
+                                        {'error': error_msg, 'date': str(process_date), 'reason': reason}, 'error')
+                    except Exception:
+                        pass  # Don't fail if logging fails
             
             # Sleep for 1 minute
             time_module.sleep(60)
         except Exception as e:
-            print(f"Error in daily cash out worker: {e}")
+            error_msg = str(e)
+            print(f"Error in daily cash out worker: {error_msg}")
             import traceback
             traceback.print_exc()
+            
+            # Log worker error
+            try:
+                log_system_event('cash_out_error', f'Error in daily cash out worker: {error_msg}', 
+                                {'error': error_msg}, 'error')
+            except Exception:
+                pass  # Don't fail if logging fails
+            
             time_module.sleep(60)
 
 def start_daily_cash_out_scheduler():
@@ -1603,6 +2215,135 @@ def start_daily_cash_out_scheduler():
 
 # Start the scheduler when module is imported (works in all deployment scenarios)
 start_daily_cash_out_scheduler()
+
+# System log routes
+@app.route('/system-log')
+@parent_required
+def system_log_page():
+    """Page to view system logs."""
+    return render_template('system_log.html')
+
+@app.route('/api/system-log', methods=['GET'])
+@parent_required
+def get_system_logs():
+    """Get system logs with optional filtering, sorting, and searching."""
+    try:
+        # Get query parameters
+        log_type = request.args.get('log_type', '')
+        status = request.args.get('status', '')
+        search = request.args.get('search', '')
+        sort_by = request.args.get('sort_by', 'timestamp')
+        sort_order = request.args.get('sort_order', 'desc')
+        limit = request.args.get('limit', '100')
+        offset = request.args.get('offset', '0')
+        
+        # Validate sort_by to prevent SQL injection
+        allowed_sort_columns = ['timestamp', 'log_type', 'message', 'status']
+        if sort_by not in allowed_sort_columns:
+            sort_by = 'timestamp'
+        
+        # Validate sort_order
+        if sort_order not in ['asc', 'desc']:
+            sort_order = 'desc'
+        
+        # Validate limit and offset
+        try:
+            limit_int = int(limit)
+            offset_int = int(offset)
+            if limit_int < 1 or limit_int > 1000:
+                limit_int = 100
+            if offset_int < 0:
+                offset_int = 0
+        except (ValueError, TypeError):
+            limit_int = 100
+            offset_int = 0
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Build query with filters
+        where_clauses = []
+        params = []
+        
+        if log_type:
+            where_clauses.append('log_type = %s')
+            params.append(log_type)
+        
+        if status:
+            where_clauses.append('status = %s')
+            params.append(status)
+        
+        if search:
+            where_clauses.append('(message ILIKE %s OR details ILIKE %s)')
+            search_pattern = f'%{search}%'
+            params.append(search_pattern)
+            params.append(search_pattern)
+        
+        where_clause = ' AND '.join(where_clauses) if where_clauses else '1=1'
+        
+        # Build query
+        query = f'''
+            SELECT log_id, timestamp, log_type, message, details, status, ip_address
+            FROM system_log
+            WHERE {where_clause}
+            ORDER BY {sort_by} {sort_order.upper()}
+            LIMIT %s OFFSET %s
+        '''
+        params.extend([limit_int, offset_int])
+        
+        cursor.execute(query, params)
+        logs = cursor.fetchall()
+        
+        # Get total count for pagination
+        count_query = f'SELECT COUNT(*) as total FROM system_log WHERE {where_clause}'
+        cursor.execute(count_query, params[:-2])  # Remove limit and offset from count query
+        total_result = cursor.fetchone()
+        total = total_result['total'] if total_result else 0
+        
+        cursor.close()
+        conn.close()
+        
+        # Convert logs to dict format
+        # Ensure timestamps are displayed in local system time
+        logs_list = []
+        for log in logs:
+            timestamp = log['timestamp']
+            if timestamp:
+                # Timestamps are stored as naive datetimes in local system time
+                # Convert to ISO format string - if naive, assume it's already in local time
+                if timestamp.tzinfo is None:
+                    # Naive datetime - assume it's in local system time
+                    # Convert to timezone-aware for proper ISO formatting
+                    # Get local timezone offset
+                    local_tz = datetime.now(timezone.utc).astimezone().tzinfo
+                    timestamp_aware = timestamp.replace(tzinfo=local_tz)
+                    timestamp_str = timestamp_aware.isoformat()
+                else:
+                    # Already timezone-aware, ensure it's in local time
+                    timestamp_local = timestamp.astimezone()
+                    timestamp_str = timestamp_local.isoformat()
+            else:
+                timestamp_str = None
+            
+            logs_list.append({
+                'log_id': log['log_id'],
+                'timestamp': timestamp_str,
+                'log_type': log['log_type'],
+                'message': log['message'],
+                'details': log['details'],
+                'status': log['status'],
+                'ip_address': log.get('ip_address', None)
+            })
+        
+        return jsonify({
+            'logs': logs_list,
+            'total': total,
+            'limit': limit_int,
+            'offset': offset_int
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Error fetching system logs: {str(e)}'}), 500
 
 if __name__ == '__main__':
     # Ensure database is initialized
