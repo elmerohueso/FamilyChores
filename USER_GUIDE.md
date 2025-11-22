@@ -32,8 +32,6 @@ Welcome to Family Chores! This guide will help you get started and make the most
 
 ---
 
----
-
 ## Understanding Points and Rewards
 
 ### Point System
