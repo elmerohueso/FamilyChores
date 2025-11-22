@@ -20,7 +20,9 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
       - name: build image
-        run: docker build . -t ghcr.io/elmerohueso/family-chores:latest
+        run: |
+          docker buildx create --name multiarch-builder --use --bootstrap
+          docker buildx . --platform linux/amd64,linux/arm64 --tag ghcr.io/elmerohueso/family-chores:latest
       - name: push image
         run: |
           echo ${{secrets.CR_PAT}} | docker login ghcr.io -u elmerohueso --password-stdin

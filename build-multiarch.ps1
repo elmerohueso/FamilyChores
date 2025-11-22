@@ -3,19 +3,15 @@
 $ErrorActionPreference = "Stop"
 
 $IMAGE_NAME = if ($env:IMAGE_NAME) { $env:IMAGE_NAME } else { "ghcr.io/elmerohueso/family-chores" }
-$IMAGE_TAG = if ($env:IMAGE_TAG) { $env:IMAGE_TAG } else { "latest" }
+$IMAGE_TAG = if ($env:IMAGE_TAG) { $env:IMAGE_TAG } else { "multiarch" }
 
 Write-Host "Building multi-architecture Docker image..."
 Write-Host "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
 Write-Host "Platforms: linux/amd64,linux/arm64"
 
-# Create a new builder instance if it doesn't exist
-$builderExists = docker buildx inspect multiarch-builder 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Creating new buildx builder instance..."
-    docker buildx create --name multiarch-builder --use
-    docker buildx inspect --bootstrap
-}
+# Create a new builder instance
+Write-Host "Creating new buildx builder instance..."
+docker buildx create --name multiarch-builder --use --bootstrap
 
 # Build for both platforms
 docker buildx build `
