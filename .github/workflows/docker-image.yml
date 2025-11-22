@@ -13,6 +13,7 @@ on:
       - "docker-compose.yml"
       - "docker-compose-dev.yml"
       - "README.md"
+      - "USER_GUIDE.md"
 
 jobs:
   build:
