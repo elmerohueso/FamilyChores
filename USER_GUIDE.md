@@ -5,12 +5,11 @@ Welcome to Family Chores! This guide will help you get started and make the most
 ## Table of Contents
 
 1. [Getting Started](#getting-started)
-2. [Parent Guide](#parent-guide)
-3. [Kid Guide](#kid-guide)
-4. [Understanding Points and Rewards](#understanding-points-and-rewards)
-5. [Settings and Configuration](#settings-and-configuration)
-6. [Common Tasks](#common-tasks)
-7. [Tips and Best Practices](#tips-and-best-practices)
+2. [Understanding Points and Rewards](#understanding-points-and-rewards)
+3. [Settings and Configuration](#settings-and-configuration)
+4. [Typical Usage](#typical-usage)
+5. [Tips and Best Practices](#tips-and-best-practices)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -23,7 +22,7 @@ Welcome to Family Chores! This guide will help you get started and make the most
    - You'll see the home page with a role selection screen
 
 2. **Choose Your Role**
-   - **Parent**: Click "Parent" and enter your PIN (default: `1234`, can be changed in environment variables)
+   - **Parent**: Click "Parent" and enter your PIN (default: `1234`, can be changed in docker-compose environment variables)
    - **Kid**: Click "Kid" to access the kid interface
 
 3. **Initial Setup (Parent Only)**
@@ -32,200 +31,6 @@ Welcome to Family Chores! This guide will help you get started and make the most
    - Configure settings and permissions
 
 ---
-
-## Parent Guide
-
-### Home Page
-
-The home page displays all family members with their:
-- **Point Balance**: Points earned from completed chores
-- **Cash Balance**: Money available for withdrawal
-- **Avatar**: Custom profile picture (click to change)
-
-### Managing Users
-
-**Add a New User:**
-1. Click "Add User" button (or navigate to `/add-user`)
-2. Enter the user's full name
-3. Click "Add User"
-4. Optionally upload an avatar image (PNG, JPG, JPEG, GIF, WEBP, max 5MB)
-
-**Delete a User:**
-1. Go to Settings
-2. Scroll to "Manage Users" section
-3. Click the delete button (🗑️) next to the user you want to remove
-4. Confirm deletion
-
-**Change Avatar:**
-1. On the home page, click the user's avatar
-2. Select a new image file
-3. Click "Upload"
-
-### Managing Chores
-
-**Add a Chore:**
-1. Click "Add Chore" button (or navigate to `/add-chore`)
-2. Enter chore name (e.g., "Take out trash")
-3. Set point value (how many points this chore is worth)
-4. Choose repeat interval:
-   - **As Needed**: Can be done anytime
-   - **Daily**: Can be done once per day (with cooldown period)
-   - **Weekly**: Can be done once per week (with cooldown period)
-   - **Monthly**: Can be done once per month (with cooldown period)
-5. Click "Add Chore"
-
-**Edit a Chore:**
-1. Go to Chores page (`/chores`)
-2. Click the edit button (✏️) next to the chore
-3. Modify name, point value, or repeat interval
-4. Click "Save Changes"
-
-**Delete a Chore:**
-1. Go to Chores page (`/chores`)
-2. Click the delete button (🗑️) next to the chore
-3. Confirm deletion
-
-**Import Chores from CSV:**
-1. Go to Settings
-2. Scroll to "Manage Chores" section
-3. Click "Choose File" and select a CSV file
-4. CSV format: `chore,point_value,repeat`
-   - Example: `Take out trash,5,daily`
-   - Leave repeat empty for "as_needed"
-5. Click "Import Chores"
-
-### Recording Chores
-
-**Record a Completed Chore:**
-1. Click "Record Chore" (or navigate to `/record-chore`)
-2. Select the user who completed the chore
-3. Select the chore from the list
-   - Chores on cooldown will be grayed out and cannot be selected
-4. Click "Record Chore"
-5. Points are automatically added to the user's balance
-
-### Redeeming Points
-
-**Redeem Points for Rewards:**
-1. Click "Redeem Points" (or navigate to `/redeem-points`)
-2. Select the user
-3. Choose redemption type:
-   - **Media Time**: 5 points = 30 minutes
-   - **Money**: 5 points = $1.00
-4. Enter the number of points (must be a multiple of 5)
-5. Click "Redeem"
-6. Points are deducted and cash is added (if redeeming for money)
-
-### Withdrawing Cash
-
-**Withdraw Cash:**
-1. Click "Withdraw Cash" (or navigate to `/withdraw-cash`)
-2. Select the user
-3. Enter the amount to withdraw (whole dollars only)
-4. Click "Withdraw"
-5. Cash balance is reduced by the withdrawal amount
-
-### Viewing History
-
-**Transaction History:**
-1. Click "History" (or navigate to `/history`)
-2. View all transactions:
-   - Chore completions
-   - Point redemptions
-   - Cash withdrawals
-3. Filter by:
-   - User
-   - Transaction type
-   - Date range
-4. Search by description
-
-### Settings
-
-Access Settings by clicking the ⚙️ icon in the top right corner (parent role only).
-
-**Automatic Daily Cash Out:**
-- Enable/disable automatic conversion of excess points to cash
-- Set the time when cash out runs (default: midnight)
-- Configure maximum rollover points (default: 4)
-- Excess points above the limit are converted to cash at 5 points = $1
-
-**Chore Cooldown Periods:**
-- **Daily chores**: Hours before can be done again (default: 12 hours)
-- **Weekly chores**: Days before can be done again (default: 4 days)
-- **Monthly chores**: Days before can be done again (default: 14 days)
-
-**Kid Permissions:**
-Control what kids can do:
-- ✅ Record Chore: Allow kids to mark chores as complete
-- ✅ Redeem Points: Allow kids to redeem their points
-- ✅ Withdraw Cash: Allow kids to withdraw cash
-- ✅ View History: Allow kids to see transaction history
-
-**Email Notifications:**
-- Configure SMTP server settings
-- Set up email alerts for:
-  - Chore completions
-  - Point redemptions
-  - Cash withdrawals
-  - Daily digest (summary email at midnight)
-- Add parent email addresses (comma-separated)
-- Test email configuration with "Send Test Email" button
-- Manually send daily digest with "Send Daily Digest" button
-
-**Data Management:**
-- Reset all points to 0
-- Reset all cash balances to $0.00
-- Delete all transactions
-- Run one-time cash out manually
-
----
-
-## Kid Guide
-
-### Home Page
-
-Kids can view the home page to see:
-- All family members
-- Point and cash balances
-- User avatars
-
-### Viewing Chores
-
-1. Click "Chores" (or navigate to `/chores`)
-2. View all available chores
-3. See point values and repeat intervals
-4. Chores on cooldown are shown in gray
-
-### Recording Chores (If Enabled)
-
-1. Click "Record Chore" (or navigate to `/record-chore`)
-2. Select yourself from the user list
-3. Select a chore (only available chores can be selected)
-4. Click "Record Chore"
-5. Points are added to your balance
-
-### Redeeming Points (If Enabled)
-
-1. Click "Redeem Points" (or navigate to `/redeem-points`)
-2. Select yourself
-3. Choose:
-   - **Media Time**: 5 points = 30 minutes
-   - **Money**: 5 points = $1.00
-4. Enter points (multiples of 5)
-5. Click "Redeem"
-
-### Withdrawing Cash (If Enabled)
-
-1. Click "Withdraw Cash" (or navigate to `/withdraw-cash`)
-2. Select yourself
-3. Enter amount (whole dollars)
-4. Click "Withdraw"
-
-### Viewing History (If Enabled)
-
-1. Click "History" (or navigate to `/history`)
-2. View your transaction history
-3. Filter and search as needed
 
 ---
 
@@ -263,6 +68,9 @@ When enabled:
 - User has 24 points
 - At midnight: 20 points convert to $4.00, 4 points remain
 
+### Withdrawing Cash
+Parents can choose do either directly pay out, or to treat this as an expense balance. Withdrawals against this balance can be tracked within the app.
+
 ---
 
 ## Settings and Configuration
@@ -291,9 +99,9 @@ Only parents can access settings. Click the ⚙️ icon in the top right corner 
 - SMTP Server: Your email provider's SMTP server
 - SMTP Port: Usually 587 (TLS) or 465 (SSL)
 - Username: Your email address
-- Password: Your email password (encrypted in database)
-- Sender Name: Name shown in email "From" field
-- Parent Addresses: Comma-separated email addresses
+- Password: Your email password (stored encrypted in the database)
+- Sender Name: Name that will show in the "From" field on notifications
+- Parent Addresses: Email addresses for ne or more parents (comma-separated)
 - Notification toggles: Enable/disable specific notifications
 - Daily Digest: Receive summary email at midnight
 
@@ -301,37 +109,160 @@ Only parents can access settings. Click the ⚙️ icon in the top right corner 
 
 **Reset Points:**
 - Sets all user point balances to 0
-- Does not affect cash or transaction history
+- Does not affect cash or action history
 
 **Reset Cash:**
 - Sets all user cash balances to $0.00
-- Does not affect points or transaction history
+- Does not affect points or action history
 
-**Reset Transactions:**
-- Deletes all transaction history
+**Reset actions:**
+- Deletes all action history
 - Does not affect current point or cash balances
 
 **⚠️ Warning**: These actions cannot be undone!
 
 ---
 
-## Common Tasks
+## Typical Usage
 
-### Setting Up Your Family
+### Home Page
 
-1. **Add Family Members:**
-   - Go to "Add User"
-   - Enter each family member's name
-   - Upload avatars (optional)
+The home page displays all family members with their:
+- **Point Balance**: Points earned from completed chores
+- **Cash Balance**: Money available for withdrawal
+- **Avatar**: Custom profile picture (click to change)
 
-2. **Create Chores:**
-   - Go to "Add Chore"
-   - Create common chores with appropriate point values
-   - Set repeat intervals for recurring chores
+### Managing Users
 
-3. **Configure Permissions:**
-   - Go to Settings
-   - Set kid permissions based on age and responsibility
+**Add a New User:**
+1. Go to Settings
+2. Scroll to the "User Management" section
+3. Click "Add User" button
+4. Enter the user's full name
+5. Set the user's initial point balance
+6. Optionally, upload an avatar image (PNG, JPG, JPEG, GIF, WEBP, max 5MB)
+7. Click "Add User"
+
+**Delete a User:**
+1. Go to Settings
+2. Scroll to and expand the "User Management" section
+3. Click the delete button (✕) next to the user you want to remove
+4. Confirm deletion
+
+**Change Avatar:**
+1. On the home page, click the user's avatar
+2. Select a new image file (PNG, JPG, JPEG, GIF, WEBP, max 5MB)
+3. Click "Upload"
+
+### Managing Chores
+
+**Add a Chore Manually:**
+1. Go to Settings
+2. Scroll to the "Chore List" section
+3. Click "Add Chore" button
+4. Click the "Manual Entry" tab
+5. Enter the chore name (e.g., "Take out trash")
+6. Set the point value (how many points this chore is worth)
+7. Choose the repeat frequency:
+   - **As Needed**: Can be done anytime
+   - **Daily**: Can be done once per day (with cooldown period)
+   - **Weekly**: Can be done once per week (with cooldown period)
+   - **Monthly**: Can be done once per month (with cooldown period)
+6. Click "Add Chore"
+
+**Import Chores from CSV:**
+1. Go to Settings
+2. Scroll to the "Chore List" section
+3. Click "Add Chore" button
+4. Click the "CSV Import" tab
+5. Select the desired CSV file
+5. Click "Import Chores"
+
+**Edit a Chore:**
+1. Go to Settings
+2. Scroll to and expand the "Chore List" section
+3. Click directly on the chore name, point value, or repeat frequency you want to edit
+4. Modify the value in the edit field that appears
+5. Click "Save" or press Enter to save, or "Cancel" to discard changes
+
+**Delete a Chore:**
+1. Go to Settings
+2. Scroll to and expand the "Chore List" section
+3. Click the delete button (✕) next to the chore
+4. Confirm deletion
+
+
+
+### Recording Chores
+
+**Record a Completed Chore:**
+1. Click "Record a Chore" under the desired user
+2. Select the chore from the list
+   - Chores on cooldown will be grayed out and cannot be selected
+4. Depending how well the chorse was done, change the points to give
+5. Click "Record Chore"
+
+### Redeeming Points
+
+**Redeem Points for Rewards:**
+1. Click "Redeem Points" under the desired use
+2. Enter the number of points to redeem (must be a multiple of 5)
+3. Choose the redemption type:
+   - **Media Time**: 5 points = 30 minutes
+   - **Money**: 5 points = $1.00
+
+4 Click "Redeem Points"
+
+### Withdrawing Cash
+
+**Withdraw Cash:**
+1. Click "Withdraw Cash" under the desired used
+2. Enter the amount to withdraw (whole dollars only)
+4. Click "Withdraw Cash"
+
+### Viewing History
+
+**Action History:**
+1. Click "View History" under the desired used
+
+### Settings
+
+Access Settings by clicking the ⚙️ icon in the top right corner (parent role only).
+
+**Automatic Daily Cash Out:**
+- Enable/disable automatic conversion of excess points to cash
+- Set the time when cash out runs (default: midnight)
+- Configure maximum rollover points (default: 4)
+- Excess points above the limit are converted to cash at 5 points = $1
+
+**Chore Cooldown Periods:**
+- **Daily chores**: Hours before the chore can be done again (default: 12 hours)
+- **Weekly chores**: Days before the chore can be done again (default: 4 days)
+- **Monthly chores**: Days before the chore can be done again (default: 14 days)
+
+**Kid Permissions:**
+Control what kids can do:
+- Record Chore: Allow kids to mark chores as complete on their own
+- Redeem Points: Allow kids to redeem points on their own
+- Withdraw Cash: Allow kids to withdraw cash on their own
+- View History: Allow kids to see action history on their own
+
+**Email Notifications:**
+- Configure SMTP server settings
+- Set up email alerts for:
+  - Chore completions
+  - Point redemptions
+  - Cash withdrawals
+  - Daily digest (summary email at midnight)
+- Add parent email addresses (comma-separated)
+- Test email configuration with "Send Test Email" button
+- Manually send daily digest with "Send Daily Digest" button
+
+**Data Management:**
+- Reset all point balances to 0
+- Reset all cash balances to $0
+- Delete all action history (does not affect current balances)
+- Run one-time cash out manually
 
 ### Daily Workflow
 
@@ -349,7 +280,7 @@ Only parents can access settings. Click the ⚙️ icon in the top right corner 
 
 ### Weekly Tasks
 
-1. **Review transaction history:**
+1. **Review action history:**
    - Check who completed what chores
    - Review point redemptions and cash withdrawals
 
@@ -409,7 +340,7 @@ Only parents can access settings. Click the ⚙️ icon in the top right corner 
 
 ### Best Practices
 
-1. **Regular Reviews**: Check transaction history weekly to ensure accuracy
+1. **Regular Reviews**: Check action history weekly to ensure accuracy
 2. **Clear Communication**: Explain the system to all family members
 3. **Consistency**: Apply rules consistently to all kids
 4. **Celebrate Success**: Acknowledge when kids complete chores and earn rewards
@@ -427,7 +358,7 @@ Only parents can access settings. Click the ⚙️ icon in the top right corner 
 
 **Points not showing:**
 - Refresh the page
-- Check transaction history to verify the chore was recorded
+- Check action history to verify the chore was recorded
 
 **Email not working:**
 - Verify SMTP settings are correct
@@ -444,15 +375,3 @@ Only parents can access settings. Click the ⚙️ icon in the top right corner 
 - Try uploading again
 
 ---
-
-## Support
-
-For technical issues or questions about the application:
-- Check the README.md for technical documentation
-- Review the Settings page for configuration options
-- Check transaction history to verify system behavior
-
----
-
-**Happy Chore Managing! 🏠✨**
-
