@@ -17,6 +17,7 @@ A web application for managing family chores, points, and rewards using Python a
 - **Email Notifications**: Receive immediate email alerts for chore completions, point redemptions, and cash withdrawals, plus optional daily digest summary
 - **Settings Management**: Configure system settings, manage chores list, and reset data
 - **CSV Import**: Bulk import chores from CSV files
+- **Multi-Architecture**: Supports both ARM64 (Apple Silicon, Raspberry Pi) and AMD64 (Intel/AMD) architectures
 
 #### CSV Import
 - Import multiple chores at once via CSV file
@@ -77,19 +78,29 @@ Parents have full control over what kids can access through granular permission 
 ## Quick Start
 
 ### Prerequisites
-- Docker and Docker Compose installed
+- Docker
+- Docker Compose
+- Docker Buildx (only for building)
 
 ### Run using pre-built image
 1. Download docker-compose.yml from this repository
 2. Edit the environment variables, ports, and volumes as desired
-3. Run `docker-compose up` from the directory housing docker-compose.yml
+3. From the directory housing docker-compose.yml, run the following commands:
+
+`docker compose up -d`
 
 The application will be available at `http://localhost:8000` (or at the specified port)
 
-### Build and run with Docker Compose
+### Build and run from source
 1. Clone this repository
-2. Edit the environment variables, ports, and volumes in docker-compose-dev.yml as desired
-3. Run `docker-compose -f .\docker-compose-dev.yml up --build` from the directory housing docker-compose-dev.yml
+2. Edit the environment variables, ports, and volumes in docker-compose.yml as desired
+3. From the directory housing docker-compose.yml, run the following commands:
+
+`docker buildx create --name multiarch-builder --use --bootstrap`
+
+`docker buildx . --platform linux/amd64,linux/arm64`
+
+`docker compose up -d`
 
 The application will be available at `http://localhost:8000` (or at the specified port)
 
