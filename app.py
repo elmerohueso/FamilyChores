@@ -2255,12 +2255,13 @@ def send_daily_digest_email(force=False):
                 raise ValueError("No parent email addresses configured")
             return
         
-        # Get today's date in local timezone
+        # Get yesterday's date in local timezone (since digest triggers at midnight)
         now = datetime.now()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        yesterday = now - timedelta(days=1)
+        yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
         
-        # Get all transactions for today
+        # Get all transactions for yesterday
         cursor.execute('''
             SELECT 
                 t.transaction_id,
@@ -2274,7 +2275,7 @@ def send_daily_digest_email(force=False):
             LEFT JOIN "user" u ON t.user_id = u.user_id
             WHERE t.timestamp >= %s AND t.timestamp <= %s
             ORDER BY t.timestamp DESC
-        ''', (today_start, today_end))
+        ''', (yesterday_start, yesterday_end))
         transactions = cursor.fetchall()
         
         # Get all users with their current balances
@@ -2337,8 +2338,8 @@ def send_daily_digest_email(force=False):
                 """
                 transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
         else:
-            transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions today</td></tr>"
-            transactions_text = "No transactions today\n"
+            transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions yesterday</td></tr>"
+            transactions_text = "No transactions yesterday\n"
         
         # Format user balances
         balances_html = ""
@@ -2357,7 +2358,7 @@ def send_daily_digest_email(force=False):
             balances_text += f"{user_name}: {point_balance} points, ${cash_balance:.2f}\n"
         
         # Generate email content
-        date_str = now.strftime('%B %d, %Y')
+        date_str = yesterday.strftime('%B %d, %Y')
         subject = f"Family Chores Daily Digest - {date_str}"
         
         body_html = f"""
@@ -2366,7 +2367,7 @@ def send_daily_digest_email(force=False):
           <body>
             <h2>Daily Digest - {date_str}</h2>
             
-            <h3>Today's Activity</h3>
+            <h3>Yesterday's Activity</h3>
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                 <thead>
                     <tr style="background-color: #f5f5f5;">
@@ -2404,7 +2405,7 @@ def send_daily_digest_email(force=False):
         
         body_text = f"""Daily Digest - {date_str}
 
-Today's Activity:
+Yesterday's Activity:
 {transactions_text}
 
 Current Balances:
@@ -2460,7 +2461,6 @@ def job_timer():
             # Get current time in local system timezone
             now = datetime.now()
             current_date = now.date()
-            current_time = now.time()
 
             jobs_to_trigger = []
             if now.hour == cash_out_hour and now.minute == cash_out_minute and last_processed_date != current_date:
@@ -2469,10 +2469,10 @@ def job_timer():
             if now.hour == 0 and now.minute == 0:
                 jobs_to_trigger.append("daily_digest")
 
-            if jobs_to_trigger.contains("cash_out"):
+            if "cash_out" in jobs_to_trigger:
                 logger.info(f"Triggering automatic daily cash out.")
                 process_daily_cash_out()
-            if jobs_to_trigger.contains("daily_digest"):
+            if "daily_digest" in jobs_to_trigger:
                 logger.info(f"Sending daily digest email.)")
                 send_daily_digest_email()
             if not jobs_to_trigger:
