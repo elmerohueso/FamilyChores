@@ -1536,8 +1536,9 @@ input:checked + .toggle-slider:before {
 
 .toast {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
+    top: 20px;
+    left: 50%;
+    transform: translate(-50%, -20px);
     padding: 16px 24px;
     border-radius: 8px;
     font-size: 14px;
@@ -1545,14 +1546,18 @@ input:checked + .toggle-slider:before {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     z-index: 10000;
     opacity: 0;
-    transform: translateY(20px);
     transition: opacity 0.3s ease, transform 0.3s ease;
-    max-width: 400px;
+    max-width: 560px;
+    width: calc(100% - 40px);
+    max-width: 600px;
+    box-sizing: border-box;
+    text-align: center;
+    word-break: break-word;
 }
 
 .toast.show {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(-50%, 0);
 }
 
 .toast.success {
