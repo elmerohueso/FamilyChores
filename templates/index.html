@@ -16,9 +16,12 @@
                     <div class="system-time-value" id="systemTimeInfo">--:-- --</div>
                 </div>
             </div>
-            <div class="header-actions">
-                <a href="/settings" class="settings-link" id="settingsLink" title="Settings">⚙️</a>
-                <button class="btn-logout" id="logoutBtn" onclick="logout()" title="Logout">Logout</button>
+            <div class="header-nav">
+                <div></div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
+                    <a href="/settings" class="settings-link" id="settingsLink" title="Settings">⚙️</a>
+                    <button class="btn-logout" id="logoutBtn" onclick="logout()" title="Logout">Logout</button>
+                </div>
             </div>
         </header>
 
@@ -68,7 +71,7 @@
     <div id="avatarUploadOverlay" class="avatar-upload-overlay">
         <div class="avatar-upload-content">
             <h2 style="margin-bottom: 20px; color: #333;">Change Avatar</h2>
-            <img id="avatarPreview" class="avatar-preview" alt="Preview">
+            <img id="avatarPreview" class="avatar-preview-image" alt="Preview">
             <div class="file-input-wrapper">
                 <label for="avatarFile" class="file-input-label">Choose Image</label>
                 <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="previewAvatar(event)">
@@ -178,7 +181,9 @@
                     setRole(role);
                     // Reload permissions in case settings changed
                     await loadKidPermissions();
-                    document.getElementById('roleSelectionOverlay').classList.add('hidden');
+                        const roleOverlay = document.getElementById('roleSelectionOverlay');
+                        roleOverlay.classList.remove('show');
+                        roleOverlay.classList.add('hidden');
                     applyRoleRestrictions();
                     // Load users after role is set to apply restrictions
                     loadUsers();
@@ -274,6 +279,7 @@
             if (!role) {
                 // Show role selection modal - wait for user to select
                 document.getElementById('roleSelectionOverlay').classList.remove('hidden');
+                    document.getElementById('roleSelectionOverlay').classList.add('show');
             } else {
                 userRole = role;
                 document.getElementById('roleSelectionOverlay').classList.add('hidden');
@@ -332,10 +338,10 @@
                                 )
                             }
                             <div class="user-name" style="position: relative; z-index: 2;">${escapeHtml(user.full_name)}</div>
-                            <div class="user-balance" style="position: relative; z-index: 2;">${user.balance || 0}</div>
+                            <div class="balance points" style="position: relative; z-index: 2;">${user.balance || 0}</div>
                             <div class="balance-label" style="position: relative; z-index: 2;">Points Balance</div>
-                            <div class="cash-balance" style="position: relative; z-index: 2;">$${(user.cash_balance || 0).toFixed(2)}</div>
-                            <div class="cash-balance-label" style="position: relative; z-index: 2;">Cash Balance</div>
+                            <div class="balance cash" style="position: relative; z-index: 2;">$${(user.cash_balance || 0).toFixed(2)}</div>
+                            <div class="balance-label" style="position: relative; z-index: 2;">Cash Balance</div>
                             <div class="user-actions">
                                 ${getRole() !== 'kid' ? `
                                     <a href="/record-chore?user_id=${user.user_id}" class="user-action-btn primary" onclick="event.stopPropagation();">Record a Chore</a>

@@ -11,7 +11,7 @@
     <div class="container">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link nav-link-left">← Home</a>
+                <a href="/" class="nav-link">← Home</a>
             </div>
             <h1>💰 Chore & Reward History</h1>
         </header>
@@ -272,12 +272,12 @@
                 const isWithdrawal = transaction.transaction_type === 'cash_withdrawal';
                 const isChore = transaction.transaction_type === 'chore_completed' || (!transaction.transaction_type && transaction.value >= 0);
                 
-                // Determine CSS class for transaction type badge
-                let typeClass = 'type-chore';
+                // Determine CSS class for transaction type badge (unified badge system)
+                let typeClass = 'badge-chore';
                 if (type === 'points_redemption') {
-                    typeClass = 'type-redemption';
+                    typeClass = 'badge-redemption';
                 } else if (type === 'cash_withdrawal') {
-                    typeClass = 'type-withdrawal';
+                    typeClass = 'badge-withdrawal';
                 }
                 
                 let valueDisplay = '';
@@ -293,7 +293,7 @@
                     <tr>
                         <td class="history-user-name">${escapeHtml(transaction.user_name || 'Unknown')}</td>
                         <td>
-                            <span class="transaction-type ${typeClass}">
+                            <span class="badge ${typeClass}">
                                 ${escapeHtml(typeLabel)}
                             </span>
                         </td>

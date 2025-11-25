@@ -11,7 +11,7 @@
     <div class="container">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link nav-link-left">← Home</a>
+                <a href="/" class="nav-link">← Home</a>
             </div>
             <h1>⚙️ Settings</h1>
         </header>
@@ -647,13 +647,13 @@
         let editingChoreId = null;
 
         function getRepeatBadgeClass(repeat) {
-            if (!repeat) return 'repeat-none';
+            if (!repeat) return 'badge-none';
             const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'daily') return 'repeat-daily';
-            if (repeatLower === 'weekly') return 'repeat-weekly';
-            if (repeatLower === 'monthly') return 'repeat-monthly';
-            if (repeatLower === 'as_needed') return 'repeat-as_needed';
-            return 'repeat-none';
+            if (repeatLower === 'daily') return 'badge-daily';
+            if (repeatLower === 'weekly') return 'badge-weekly';
+            if (repeatLower === 'monthly') return 'badge-monthly';
+            if (repeatLower === 'as_needed') return 'badge-as-needed';
+            return 'badge-none';
         }
 
         function formatRepeat(repeat) {
@@ -794,7 +794,7 @@
                             ${chore.point_value || 0}
                         </td>
                         <td class="editable" onclick="startChoreEdit(${chore.chore_id}, 'repeat')">
-                            <span class="repeat-badge ${repeatClass}">${escapeHtml(repeatText)}</span>
+                            <span class="badge ${repeatClass}">${escapeHtml(repeatText)}</span>
                         </td>
                         <td class="editable" onclick="startChoreEdit(${chore.chore_id}, 'requires_approval')">
                             ${chore.requires_approval ? '✓' : '✗'}

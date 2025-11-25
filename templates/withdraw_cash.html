@@ -8,10 +8,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
-    <div class="container container-narrow">
+    <div class="container container-sm">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link nav-link-left">← Home</a>
+                <a href="/" class="nav-link">← Home</a>
             </div>
             <h1>💵 Withdraw Cash</h1>
         </header>
@@ -25,16 +25,16 @@
                     <select id="user_id" name="user_id" required>
                         <option value="">Select a user...</option>
                     </select>
-                    <div id="userCashBalance" class="user-balance-cash" style="display: none;"></div>
+                    <div id="userCashBalance" class="balance cash" style="display: none;"></div>
                 </div>
 
                 <div class="form-group">
                     <label for="amount">Amount to Withdraw *</label>
-                    <div class="amount-input-group">
+                    <div class="input-group">
                         <span style="font-size: 20px; color: #666;">$</span>
                         <input type="number" id="amount" name="amount" required min="1" step="1" value="" placeholder="Enter whole dollar amount">
                     </div>
-                    <div class="amount-quick-select">
+                    <div class="quick-select">
                         <button type="button" class="quick-select-btn" onclick="setAmount(1)">$1</button>
                         <button type="button" class="quick-select-btn" onclick="setAmount(2)">$2</button>
                         <button type="button" class="quick-select-btn" onclick="setAmount(3)">$3</button>
@@ -45,10 +45,10 @@
                     <div class="help-text">Amount must be a whole dollar (no cents)</div>
                 </div>
 
-                <div id="cashPreview" class="cash-preview" style="display: none;">
-                    <div class="cash-preview-label">Withdrawal Summary</div>
-                    <div class="cash-preview-value" id="cashPreviewValue">$0</div>
-                    <div class="balance-preview" id="balancePreview"></div>
+                <div id="cashPreview" class="preview-box" style="display: none;">
+                    <div class="label">Withdrawal Summary</div>
+                    <div class="preview-value" id="cashPreviewValue">$0</div>
+                    <div class="preview-detail" id="balancePreview"></div>
                 </div>
 
                 <div class="button-group">

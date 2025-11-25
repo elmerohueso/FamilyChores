@@ -8,10 +8,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
-    <div class="container container-narrow">
+    <div class="container container-sm">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link nav-link-left">← Home</a>
+                <a href="/" class="nav-link">← Home</a>
             </div>
             <h1>✅ Record a Chore</h1>
         </header>
@@ -26,7 +26,7 @@
                     <select id="user_id" name="user_id">
                         <option value="">Select a user...</option>
                     </select>
-                    <div id="userBalance" class="user-balance" style="display: none;"></div>
+                    <div id="userBalance" class="balance points" style="display: none;"></div>
                 </div>
 
                 <div class="form-group">
@@ -49,9 +49,9 @@
                     <input type="number" id="value" name="value" min="1" value="" placeholder="Points to award">
                     <div class="help-text">Points will be added to the user's balance</div>
                     
-                    <div id="pointPreview" class="point-preview" style="display: none;">
-                        <div class="point-preview-label">Points to Award</div>
-                        <div class="point-preview-value" id="pointPreviewValue">0</div>
+                    <div id="pointPreview" class="preview-box" style="display: none;">
+                        <div class="label">Points to Award</div>
+                        <div class="preview-value" id="pointPreviewValue">0</div>
                     </div>
                 </div>
 

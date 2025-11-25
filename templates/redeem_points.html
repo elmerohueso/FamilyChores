@@ -8,10 +8,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
-    <div class="container container-narrow container-with-back-link">
+    <div class="container container-sm">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link nav-link-left">← Home</a>
+                <a href="/" class="nav-link">← Home</a>
             </div>
             <h1>🎁 Redeem Points</h1>
         </header>
@@ -25,7 +25,7 @@
                     <select id="user_id" name="user_id" required>
                         <option value="">Select a user...</option>
                     </select>
-                    <div id="userBalance" class="user-balance" style="display: none;"></div>
+                    <div id="userBalance" class="balance points" style="display: none;"></div>
                 </div>
 
                 <div class="form-group">
@@ -33,7 +33,7 @@
                     <div class="points-input-group">
                         <input type="number" id="points" name="points" required min="5" step="5" value="" placeholder="Must be multiple of 5">
                     </div>
-                    <div class="points-quick-select">
+                    <div class="quick-select">
                         <button type="button" class="quick-select-btn" onclick="setPoints(5)">5</button>
                         <button type="button" class="quick-select-btn" onclick="setPoints(10)">10</button>
                         <button type="button" class="quick-select-btn" onclick="setPoints(15)">15</button>
@@ -60,10 +60,10 @@
                     </div>
                 </div>
 
-                <div id="pointsPreview" class="points-preview" style="display: none;">
-                    <div class="points-preview-label">Redemption Summary</div>
-                    <div class="points-preview-value" id="pointsPreviewValue">0</div>
-                    <div class="redemption-preview" id="redemptionPreview"></div>
+                <div id="pointsPreview" class="preview-box large" style="display: none;">
+                    <div class="label">Redemption Summary</div>
+                    <div class="preview-value" id="pointsPreviewValue">0</div>
+                    <div class="preview-detail" id="redemptionPreview"></div>
                 </div>
 
                 <div class="button-group">
