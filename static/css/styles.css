@@ -9,7 +9,7 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #667eea;
     min-height: 100vh;
     padding: 20px;
 }
@@ -87,7 +87,7 @@ header h1 {
 }
 
 .user-card {
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    background: #c3cfe2;
     border-radius: 12px;
     padding: 24px;
     text-align: center;
@@ -95,17 +95,6 @@ header h1 {
     border: 2px solid transparent;
     cursor: pointer;
     position: relative;
-}
-
-.user-card-clickable {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 1;
-    text-decoration: none;
-    color: transparent;
 }
 
 .user-icon {
@@ -184,7 +173,7 @@ header h1 {
 .file-input-label {
     display: inline-block;
     padding: 12px 24px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #667eea;
     color: white;
     border-radius: 8px;
     cursor: pointer;
@@ -378,22 +367,7 @@ header h1 {
 /* ===== Unified Systems ===== */
 
 /* Unified Button System */
-.btn,
-.btn-add-user,
-.btn-add-chore,
-.btn-upload,
-.btn-cancel-avatar,
-.btn-reset,
-.btn-confirm,
-.btn-save,
-.btn-cancel,
-.btn-delete,
-.btn-manual-cashout,
-.user-action-btn,
-.confirmation-button,
-.quick-select-btn,
-.btn-logout,
-.btn-role {
+.btn {
     padding: 12px 24px;
     border: none;
     border-radius: 8px;
@@ -407,145 +381,68 @@ header h1 {
 }
 
 /* Button size variants */
-.btn-xs,
-.quick-select-btn {
+.btn-xs {
     padding: 6px 12px;
     font-size: 12px;
     border-radius: 6px;
 }
 
-.btn-sm,
-.user-action-btn,
-.btn-save,
-.btn-cancel,
-.btn-logout {
+.btn-sm {
     padding: 8px 16px;
     font-size: 14px;
     border-radius: 6px;
 }
 
-.btn-md,
-.btn-confirm {
+.btn-md {
     padding: 10px 20px;
     font-size: 14px;
 }
 
-.btn-lg,
-.btn-role {
+.btn-lg {
     padding: 16px 32px;
     font-size: 18px;
 }
 
 /* Button color variants */
-.btn-primary,
-.btn-add-user,
-.btn-add-chore,
-.btn-upload,
-.btn-manual-cashout,
-.user-action-btn.primary,
-.confirmation-button {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.btn-white-on-purple {
+    background: #667eea;
     color: white;
 }
 
-.btn-secondary,
-.btn-cancel-avatar,
-.btn-cancel,
-.user-action-btn.secondary,
-.btn-confirm.secondary {
+.btn-gray-on-cream {
     background: #f5f5f5;
     color: #333;
 }
 
-.btn-success,
-.btn-save {
+.btn-green-on-mint {
     background: #4caf50;
     color: white;
 }
 
-.btn-danger,
-.btn-delete,
-.btn-reset.danger,
-.btn-confirm.danger {
+.btn-red-on-white {
     background: #dc3545;
     color: white;
 }
 
-.btn-info,
-.user-action-btn.info {
+.btn-blue-on-aero {
     background: #e3f2fd;
     color: #1976d2;
 }
 
-.btn-outline,
-.quick-select-btn {
+.btn-outline-only {
     background: white;
     border: 1px solid #e0e0e0;
     color: #333;
 }
 
 /* Button hover states */
-.btn:hover,
-.btn-primary:hover,
-.btn-add-user:hover,
-.btn-add-chore:hover,
-.btn-upload:hover,
-.btn-manual-cashout:hover,
-.confirmation-button:hover,
-.user-action-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.btn-secondary:hover,
-.btn-cancel-avatar:hover,
-.user-action-btn.secondary:hover,
-.btn-confirm.secondary:hover,
-.btn-cancel:hover {
-    background: #e0e0e0;
-}
-
-.btn-success:hover,
-.btn-save:hover {
-    background: #45a049;
-}
-
-.btn-danger:hover,
-.btn-reset.danger:hover,
-.btn-confirm.danger:hover {
-    background: #c82333;
-}
-
-.btn-info:hover,
-.user-action-btn.info:hover {
-    background: #bbdefb;
-}
-
-.btn-outline:hover,
-.quick-select-btn:hover {
-    border-color: #667eea;
-    background: #f8f9ff;
-}
-
-.btn-delete:hover {
-    background: #c82333;
-    transform: scale(1.1);
-}
-
-.btn-logout:hover {
-    background-color: rgba(255, 255, 255, 0.3);
-}
-
-.btn-role:hover {
+.btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 /* Button disabled states */
-.btn:disabled,
-.btn-primary:disabled,
-.btn-role:disabled,
-.btn-delete:disabled {
+.btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
@@ -556,12 +453,10 @@ header h1 {
     box-shadow: none;
 }
 
-/* Button special variants */
-.btn-add-user {
-    margin: 12px auto 0;
-}
-
+/* Special button cases */
 .btn-delete {
+    background: #dc3545;
+    color: white;
     border-radius: 4px;
     padding: 6px 10px;
     font-weight: 700;
@@ -569,26 +464,48 @@ header h1 {
     min-width: 28px;
 }
 
+.btn-delete:hover {
+    background: #c82333;
+    transform: scale(1.1);
+}
+
+.btn-delete:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
 .btn-logout {
     background: rgba(255, 255, 255, 0.2);
     color: white;
+    padding: 8px 16px;
+    font-size: 14px;
+    border-radius: 6px;
+}
+
+.btn-logout:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-role {
+    padding: 16px 32px;
+    font-size: 18px;
+}
+
+.btn-role:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .btn-role.parent {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.btn-role.kid {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    background: #667eea;
     color: white;
 }
 
-.btn-manual-cashout {
-    margin: 20px 0 0 0;
-}
-
-.user-action-btn {
-    display: block;
+.btn-role.kid {
+    background: #f093fb;
+    color: white;
 }
 
 /* Unified Modal/Overlay System */
@@ -1009,17 +926,17 @@ button:active {
     transform: translateY(0);
 }
 
-.btn-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.btn-white-on-purple {
+    background: #667eea;
     color: white;
 }
 
-.btn-secondary {
+.btn-gray-on-cream {
     background: #f5f5f5;
     color: #333;
 }
 
-.btn-primary:disabled {
+.btn-white-on-purple:disabled {
     opacity: 0.6;
     cursor: not-allowed;
     background: #cccccc;
@@ -1219,7 +1136,7 @@ button:disabled:hover {
     align-items: center;
     gap: 8px;
     padding: 8px 16px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #667eea;
     color: white;
     border-radius: 20px;
     font-size: 14px;
@@ -1252,7 +1169,7 @@ table {
 }
 
 thead {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #667eea;
     color: white;
 }
 

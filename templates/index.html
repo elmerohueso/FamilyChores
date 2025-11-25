@@ -38,7 +38,7 @@
                 </div>
             </div>
             <div style="text-align: center; width: 100%; margin-top: 20px;">
-                <a href="/chores" class="btn-add-user">Chore List</a>
+                <a href="/chores" class="btn btn-white-on-purple" style="margin: 12px auto 0;">Chore List</a>
             </div>
         </div>
 
@@ -77,8 +77,8 @@
                 <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="previewAvatar(event)">
             </div>
             <div class="avatar-upload-actions">
-                <button class="btn-upload" onclick="uploadAvatar()" id="uploadBtn" disabled>Upload</button>
-                <button class="btn-cancel-avatar" onclick="closeAvatarUpload()">Cancel</button>
+                <button class="btn btn-white-on-purple" onclick="uploadAvatar()" id="uploadBtn" disabled>Upload</button>
+                <button class="btn btn-gray-on-cream" onclick="closeAvatarUpload()">Cancel</button>
             </div>
             <div id="avatarMessage" style="margin-top: 15px; font-size: 14px; color: #666; display: none;"></div>
         </div>
@@ -344,15 +344,15 @@
                             <div class="balance-label" style="position: relative; z-index: 2;">Cash Balance</div>
                             <div class="user-actions">
                                 ${getRole() !== 'kid' ? `
-                                    <a href="/record-chore?user_id=${user.user_id}" class="user-action-btn primary" onclick="event.stopPropagation();">Record a Chore</a>
-                                    <a href="/redeem-points?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();">Redeem Points</a>
-                                    <a href="/withdraw-cash?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();" style="background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>
+                                    <a href="/record-chore?user_id=${user.user_id}" class="btn btn-white-on-purple btn-sm" onclick="event.stopPropagation();" style="display: block;">Record a Chore</a>
+                                    <a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>
+                                    <a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>
                                 ` : `
-                                    ${kidPermissions.record_chore ? `<a href="/record-chore?user_id=${user.user_id}" class="user-action-btn primary" onclick="event.stopPropagation();">Record a Chore</a>` : ''}
-                                    ${kidPermissions.redeem_points ? `<a href="/redeem-points?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();">Redeem Points</a>` : ''}
-                                    ${kidPermissions.withdraw_cash ? `<a href="/withdraw-cash?user_id=${user.user_id}" class="user-action-btn secondary" onclick="event.stopPropagation();" style="background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>` : ''}
+                                    ${kidPermissions.record_chore ? `<a href="/record-chore?user_id=${user.user_id}" class="btn btn-white-on-purple btn-sm" onclick="event.stopPropagation();" style="display: block;">Record a Chore</a>` : ''}
+                                    ${kidPermissions.redeem_points ? `<a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>` : ''}
+                                    ${kidPermissions.withdraw_cash ? `<a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>` : ''}
                                 `}
-                                ${(getRole() !== 'kid' || kidPermissions.view_history) ? `<a href="/history?user_id=${user.user_id}" class="user-action-btn info" onclick="event.stopPropagation();">View History</a>` : ''}
+                                ${(getRole() !== 'kid' || kidPermissions.view_history) ? `<a href="/history?user_id=${user.user_id}" class="btn btn-blue-on-aero btn-sm" onclick="event.stopPropagation();" style="display: block;">View History</a>` : ''}
                             </div>
                         </div>
                     `;

@@ -52,7 +52,7 @@
                             <span style="color: #666;">points</span>
                         </div>
                         <div style="text-align: right;">
-                            <button class="btn-manual-cashout" id="manualCashoutBtn" onclick="triggerDailyCashOut()">Run One-Time Cash Out</button>
+                            <button class="btn btn-white-on-purple btn-sm" id="manualCashoutBtn" onclick="triggerDailyCashOut()">Run One-Time Cash Out</button>
                             <div id="systemMessage" class="system-message"></div>
                         </div>
                     </div>
@@ -154,8 +154,8 @@
                                     <input type="text" id="parentEmailAddresses" class="number-input" style="width: 300px;" placeholder="email1@example.com, email2@example.com">
                                 </div>
                                 <div style="text-align: right; margin-bottom: 12px;">
-                                    <button type="button" class="btn-manual-cashout" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>
-                                    <button type="button" class="btn-manual-cashout" id="sendDigestBtn" onclick="sendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
+                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>
+                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="sendDigestBtn" onclick="sendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
                                     <div id="emailTestMessage" class="system-message"></div>
                                 </div>
                                 
@@ -202,8 +202,8 @@
                     </div>
 
                     <div class="button-group">
-                        <button type="submit" class="btn-primary">Save Settings</button>
-                        <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
+                        <button type="submit" class="btn-white-on-purple">Save Settings</button>
+                        <button type="button" class="btn-gray-on-cream" onclick="resetForm()">Reset</button>
                     </div>
                     
                 </form>
@@ -214,7 +214,7 @@
                             <span class="chores-toggle-icon" id="choresToggleIcon">▶</span>
                             <span>Chore Management</span>
                         </div>
-                        <a href="/add-chore" class="btn-add-chore">Add Chore</a>
+                        <a href="/add-chore" class="btn btn-white-on-purple">Add Chore</a>
                     </div>
                     <div class="chores-section-content" id="choresSectionContent">
                         <div id="choresLoading" class="loading" style="display: none;">Loading chores...</div>
@@ -264,7 +264,7 @@
                             <span class="chores-toggle-icon" id="usersToggleIcon">▶</span>
                             <span>User Management</span>
                         </div>
-                        <a href="/add-user" class="btn-add-chore">Add User</a>
+                        <a href="/add-user" class="btn btn-white-on-purple">Add User</a>
                     </div>
                     <div class="chores-section-content" id="usersSectionContent">
                         <div id="usersLoading" class="loading" style="display: none;">Loading users...</div>
@@ -307,9 +307,9 @@
                 <div class="reset-section">
                     <div class="reset-section-title">DANGER ZONE!</div>
                     <div class="reset-buttons">
-                        <button class="btn-reset danger" onclick="confirmResetPoints()">Reset All Points Balances</button>
-                        <button class="btn-reset danger" onclick="confirmResetCash()">Reset All Cash Balances</button>
-                        <button class="btn-reset danger" onclick="confirmResetTransactions()">Reset All Historical Data</button>
+                        <button class="btn btn-red-on-white" onclick="confirmResetPoints()">Reset All Points Balances</button>
+                        <button class="btn btn-red-on-white" onclick="confirmResetCash()">Reset All Cash Balances</button>
+                        <button class="btn btn-red-on-white" onclick="confirmResetTransactions()">Reset All Historical Data</button>
                     </div>
                 </div>
             </div>
@@ -321,8 +321,8 @@
                 <div class="confirmation-title" id="confirmTitle">Confirm Reset</div>
                 <div class="confirmation-message" id="confirmMessage"></div>
                 <div class="confirmation-buttons">
-                    <button class="btn-confirm danger" id="confirmBtn" onclick="executeReset()">Confirm</button>
-                    <button class="btn-confirm secondary" onclick="closeConfirmation()">Cancel</button>
+                    <button class="btn btn-red-on-white btn-md" id="confirmBtn" onclick="executeReset()">Confirm</button>
+                    <button class="btn btn-gray-on-cream btn-md" onclick="closeConfirmation()">Cancel</button>
                 </div>
             </div>
         </div>
@@ -769,8 +769,8 @@
                                     <option value="" ${!chore.repeat ? 'selected' : ''}>None</option>
                                 </select>
                                 <div class="edit-actions">
-                                    <button class="btn-save" onclick="saveChore(${chore.chore_id})">Save</button>
-                                    <button class="btn-cancel" onclick="cancelChoreEdit()">Cancel</button>
+                                    <button class="btn btn-green-on-mint btn-sm" onclick="saveChore(${chore.chore_id})">Save</button>
+                                    <button class="btn btn-gray-on-cream btn-sm" onclick="cancelChoreEdit()">Cancel</button>
                                 </div>
                             </td>
                             <td>

@@ -34,12 +34,12 @@
                         <input type="number" id="points" name="points" required min="5" step="5" value="" placeholder="Must be multiple of 5">
                     </div>
                     <div class="quick-select">
-                        <button type="button" class="quick-select-btn" onclick="setPoints(5)">5</button>
-                        <button type="button" class="quick-select-btn" onclick="setPoints(10)">10</button>
-                        <button type="button" class="quick-select-btn" onclick="setPoints(15)">15</button>
-                        <button type="button" class="quick-select-btn" onclick="setPoints(20)">20</button>
-                        <button type="button" class="quick-select-btn" onclick="setPoints(25)">25</button>
-                        <button type="button" class="quick-select-btn" onclick="setPoints(50)">50</button>
+                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(5)">5</button>
+                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(10)">10</button>
+                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(15)">15</button>
+                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(20)">20</button>
+                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(25)">25</button>
+                        <button type="button" class="btn btn-outline-only btn-xs" onclick="setPoints(50)">50</button>
                     </div>
                     <div class="help-text">Points can only be redeemed in multiples of 5</div>
                 </div>
@@ -67,8 +67,8 @@
                 </div>
 
                 <div class="button-group">
-                    <button type="submit" class="btn-primary" id="submitBtn" disabled>Redeem Points</button>
-                    <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
+                    <button type="submit" class="btn-white-on-purple" id="submitBtn" disabled>Redeem Points</button>
+                    <button type="button" class="btn-gray-on-cream" onclick="resetForm()">Reset</button>
                 </div>
             </form>
         </div>
@@ -81,7 +81,7 @@
             <div class="confirmation-title">Points Redeemed!</div>
             <div class="confirmation-message" id="confirmationMessage"></div>
             <div class="confirmation-details" id="confirmationDetails"></div>
-            <button class="confirmation-button" onclick="closeConfirmation()">Got it!</button>
+            <button class="btn btn-white-on-purple" onclick="closeConfirmation()">Got it!</button>
         </div>
     </div>
 
