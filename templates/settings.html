@@ -5,798 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings - Family Chores</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        header {
-            text-align: center;
-            color: white;
-            margin-bottom: 30px;
-            position: relative;
-        }
-
-        .header-nav {
-            position: absolute;
-            top: 0;
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .nav-link {
-            color: white;
-            text-decoration: none;
-            font-size: 14px;
-            padding: 8px 16px;
-            border-radius: 6px;
-            transition: background-color 0.2s;
-            font-weight: 500;
-        }
-
-        .nav-link:hover {
-            background-color: rgba(255, 255, 255, 0.2);
-        }
-
-        h1 {
-            font-size: 36px;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
-        }
-
-        .subtitle {
-            font-size: 16px;
-            opacity: 0.9;
-        }
-
-        .card {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
-        }
-
-        .setting-item {
-            margin-bottom: 32px;
-        }
-
-        .setting-item:last-child {
-            margin-bottom: 0;
-        }
-
-        .setting-label {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-
-        .setting-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: #333;
-        }
-        .setting-subtitle {
-            font-size: 16px;
-            font-weight: 600;
-            color: #333;
-        }     
-
-        .setting-name {
-            font-size: 16px;
-            color: #666;
-        }
-
-        .setting-description {
-            font-size: 16px;
-            color: #666;
-            margin-bottom: 16px;
-            line-height: 1.5;
-        }
-
-        .toggle-switch {
-            position: relative;
-            display: inline-block;
-            width: 50px;
-            height: 26px;
-        }
-
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: 0.3s;
-            border-radius: 26px;
-        }
-
-        .toggle-slider:before {
-            position: absolute;
-            content: "";
-            height: 20px;
-            width: 20px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: 0.3s;
-            border-radius: 50%;
-        }
-
-        input:checked + .toggle-slider {
-            background-color: #667eea;
-        }
-
-        input:checked + .toggle-slider:before {
-            transform: translateX(24px);
-        }
-
-        .input-group {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .number-input {
-            width: 100px;
-            padding: 10px 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-
-        .number-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .message {
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            display: none;
-        }
-
-        .message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-            display: block;
-        }
-
-        .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-            display: block;
-        }
-
-        .toast {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 16px 24px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            z-index: 10000;
-            opacity: 0;
-            transform: translateY(20px);
-            transition: opacity 0.3s ease, transform 0.3s ease;
-            max-width: 400px;
-        }
-
-        .toast.show {
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        .toast.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .toast.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 12px;
-            margin-top: 30px;
-        }
-
-        button {
-            flex: 1;
-            padding: 14px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .btn-secondary {
-            background: #f5f5f5;
-            color: #333;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-            font-size: 18px;
-        }
-
-        .back-link {
-            display: inline-block;
-            margin-top: 20px;
-            color: white;
-            text-decoration: none;
-            font-size: 14px;
-        }
-
-        .back-link:hover {
-            text-decoration: underline;
-        }
-
-        .reset-section {
-            margin-top: 40px;
-            padding-top: 30px;
-            border-top: 2px solid #e0e0e0;
-        }
-
-        .reset-section-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 20px;
-        }
-
-        .reset-buttons {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .btn-reset {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .btn-reset:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-
-        .btn-reset.danger {
-            background: #dc3545;
-            color: white;
-        }
-
-        .btn-reset.danger:hover {
-            background: #c82333;
-        }
-
-        .confirmation-dialog {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        }
-
-        .confirmation-dialog.show {
-            display: flex;
-        }
-
-        .confirmation-content {
-            background: white;
-            border-radius: 16px;
-            padding: 30px;
-            max-width: 400px;
-            width: 90%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            text-align: center;
-        }
-
-        .confirmation-title {
-            font-size: 20px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 12px;
-        }
-
-        .confirmation-message {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 24px;
-            line-height: 1.5;
-        }
-
-        .confirmation-buttons {
-            display: flex;
-            gap: 12px;
-        }
-
-        .btn-confirm {
-            flex: 1;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .btn-confirm.danger {
-            background: #dc3545;
-            color: white;
-        }
-
-        .btn-confirm.danger:hover {
-            background: #c82333;
-        }
-
-        .btn-confirm.secondary {
-            background: #f5f5f5;
-            color: #333;
-        }
-
-        .btn-confirm.secondary:hover {
-            background: #e0e0e0;
-        }
-
-        /* Chores list styles */
-        .chores-section {
-            margin-top: 40px;
-            padding-top: 30px;
-            border-top: 2px solid #e0e0e0;
-        }
-
-        .chores-section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .chores-section-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: #333;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .chores-section-title:hover {
-            color: #667eea;
-        }
-
-        .chores-toggle-icon {
-            font-size: 14px;
-            transition: transform 0.3s;
-        }
-
-        .chores-toggle-icon.expanded {
-            transform: rotate(90deg);
-        }
-
-        .chores-section-content {
-            display: none;
-            margin-top: 20px;
-        }
-
-        .chores-section-content.expanded {
-            display: block;
-        }
-
-        .btn-add-chore {
-            padding: 8px 16px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            text-decoration: none;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            display: inline-block;
-        }
-
-        .btn-add-chore:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-
-        .search-bar {
-            margin-bottom: 20px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .search-input {
-            flex: 1;
-            padding: 12px 16px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-
-        .search-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .search-icon {
-            font-size: 20px;
-            color: #666;
-        }
-
-        .chores-table-container {
-            overflow-x: auto;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-
-        thead {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        th {
-            padding: 16px;
-            text-align: left;
-            font-weight: 600;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            cursor: pointer;
-            user-select: none;
-            position: relative;
-        }
-
-        th:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .sort-indicator {
-            margin-left: 8px;
-            font-size: 12px;
-            opacity: 0.7;
-        }
-
-        tbody tr {
-            border-bottom: 1px solid #e0e0e0;
-            transition: background-color 0.2s;
-        }
-
-        tbody tr:hover {
-            background-color: #f8f9ff;
-        }
-
-        tbody tr.editing {
-            background-color: #fff9e6;
-        }
-
-        tbody tr:last-child {
-            border-bottom: none;
-        }
-
-        td {
-            padding: 16px;
-            color: #333;
-        }
-
-        .chore-name {
-            font-weight: 600;
-            color: #333;
-            font-size: 16px;
-        }
-
-        .point-value {
-            font-weight: 700;
-            color: #667eea;
-            font-size: 18px;
-        }
-
-        .repeat-badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: capitalize;
-        }
-
-        .repeat-daily {
-            background: #e3f2fd;
-            color: #1976d2;
-        }
-
-        .repeat-weekly {
-            background: #f3e5f5;
-            color: #7b1fa2;
-        }
-
-        .repeat-monthly {
-            background: #fff3e0;
-            color: #e65100;
-        }
-
-        .repeat-as_needed {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .repeat-none {
-            background: #f5f5f5;
-            color: #666;
-        }
-
-        .editable {
-            cursor: pointer;
-            position: relative;
-        }
-
-        .editable:hover::after {
-            content: '✏️';
-            position: absolute;
-            right: 5px;
-            font-size: 12px;
-            opacity: 0.5;
-        }
-
-        .edit-input {
-            width: 100%;
-            padding: 8px 12px;
-            border: 2px solid #667eea;
-            border-radius: 6px;
-            font-size: 16px;
-            font-family: inherit;
-        }
-
-        .edit-select {
-            width: 100%;
-            padding: 8px 12px;
-            border: 2px solid #667eea;
-            border-radius: 6px;
-            font-size: 14px;
-            font-family: inherit;
-            background: white;
-        }
-
-        .edit-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 8px;
-        }
-
-        .btn-save, .btn-cancel {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-save {
-            background: #4caf50;
-            color: white;
-        }
-
-        .btn-save:hover {
-            background: #45a049;
-        }
-
-        .btn-cancel {
-            background: #f5f5f5;
-            color: #333;
-        }
-
-        .btn-cancel:hover {
-            background: #e0e0e0;
-        }
-
-        .btn-delete {
-            background: #dc3545;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            padding: 6px 10px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background-color 0.2s, transform 0.2s;
-            font-weight: 700;
-            line-height: 1;
-            min-width: 28px;
-        }
-
-        .btn-delete:hover {
-            background: #c82333;
-            transform: scale(1.1);
-        }
-
-        .btn-delete:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .chores-empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #666;
-        }
-
-        .chores-empty-state-icon {
-            font-size: 80px;
-            margin-bottom: 20px;
-            opacity: 0.5;
-        }
-
-        .chores-empty-state-text {
-            font-size: 18px;
-        }
-
-        .btn-manual-cashout {
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            margin: 20px 0 0 0;
-        }
-
-        .btn-manual-cashout:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-
-        .btn-manual-cashout:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .system-message {
-            width: 30%;
-            margin: 15px 0 0 auto;
-            padding: 12px 16px;
-            border-radius: 8px;
-            font-size: 14px;
-            display: none;
-        }
-
-        .system-message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-            display: block;
-        }
-
-        .system-message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-            display: block;
-        }
-        .app-footer {
-            position: fixed;
-            bottom: 15px;
-            right: 15px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            color: #666;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-            z-index: 1000;
-        }
-
-        .app-footer-version {
-            font-weight: 500;
-        }
-
-        .app-footer-github {
-            display: none;
-            color: #333;
-            text-decoration: none;
-            transition: transform 0.2s;
-            width: 16px;
-            height: 16px;
-            line-height: 0;
-        }
-
-        .app-footer-github:hover {
-            transform: scale(1.1);
-            color: #24292e;
-        }
-
-        .app-footer-github svg {
-            display: block;
-        }
-
-        .app-footer-github.visible {
-            display: inline-block;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
     <div class="container">
         <header>
             <div class="header-nav">
-                <a href="/" class="nav-link nav-link-left">← Home</a>
+                <a href="/" class="nav-link">← Home</a>
             </div>
             <h1>⚙️ Settings</h1>
         </header>
@@ -809,60 +24,60 @@
                 <form id="settingsForm">
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Automatic Daily Cash Out</span>
+                            <span class="text-title-sm">Automatic Daily Cash Out</span>
                             <label class="toggle-switch">
                                 <input type="checkbox" id="automaticDailyCashOut">
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
-                        <div class="setting-description">
+                        <div class="text-body">
                             When enabled, excess points (above Max Rollover Points) are automatically converted to cash at the configured time at a rate of 5 points per dollar. The remaining points (up to Max Rollover Points) are kept in the point balance.
                         </div>
                         <div class="input-group" style="margin-top: 12px;">
-                            <label for="dailyCashOutTime" style="color: #666; margin-right: 8px;">Cash Out Time:</label>
-                            <input type="time" id="dailyCashOutTime" class="number-input" required style="width: 180px;">
+                            <label for="dailyCashOutTime" class="setting-name">Cash Out Time:</label>
+                            <input type="time" id="dailyCashOutTime" class="form-input" required style="width: 180px;">
                             <span style="color: #666; margin-left: 8px;">(if automatic cash out has already run today, changing this time will not take effect until tomorrow)</span>
                         </div>
                     </div>
 
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Max Rollover Points</span>
+                            <span class="text-title-sm">Max Rollover Points</span>
                         </div>
-                        <div class="setting-description">
+                        <div class="text-body">
                             Maximum number of points that can be carried over to the next day. Points above this amount will be converted to cash (if Automatic Daily Cash Out is enabled) or capped at this amount (if disabled).
                         </div>
                         <div class="input-group" style="margin-top: 12px;">
-                            <input type="number" id="maxRolloverPoints" class="number-input" min="0" required>
+                            <input type="number" id="maxRolloverPoints" class="form-input" min="0" required style="width: 100px;">
                             <span style="color: #666;">points</span>
                         </div>
                         <div style="text-align: right;">
-                            <button class="btn-manual-cashout" id="manualCashoutBtn" onclick="triggerDailyCashOut()">Run One-Time Cash Out</button>
+                            <button class="btn btn-white-on-purple btn-sm" id="manualCashoutBtn" onclick="triggerDailyCashOut()">Run One-Time Cash Out</button>
                             <div id="systemMessage" class="system-message"></div>
                         </div>
                     </div>
 
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Chore Cooldown Periods</span>
+                            <span class="text-title-sm">Chore Cooldown Periods</span>
                         </div>
-                        <div class="setting-description">
+                        <div class="text-body">
                             Specify how long chores should be on cooldown after being completed, based on their repeat interval. This prevents the same chore from being recorded too frequently.
                         </div>
                         <div style="margin-top: 16px;">
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="dailyCooldownHours" style="min-width: 180px;" class="setting-name">Daily Cooldown:</label>
-                                <input type="number" id="dailyCooldownHours" class="number-input" min="0" required>
+                                <input type="number" id="dailyCooldownHours" class="form-input" min="0" required style="width: 100px;">
                                 <span style="color: #666;">hours</span>
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="weeklyCooldownDays" style="min-width: 180px;" class="setting-name">Weekly Cooldown:</label>
-                                <input type="number" id="weeklyCooldownDays" class="number-input" min="0" required>
+                                <input type="number" id="weeklyCooldownDays" class="form-input" min="0" required style="width: 100px;">
                                 <span style="color: #666;">days</span>
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="monthlyCooldownDays" style="min-width: 180px;" class="setting-name">Monthly Cooldown:</label>
-                                <input type="number" id="monthlyCooldownDays" class="number-input" min="0" required>
+                                <input type="number" id="monthlyCooldownDays" class="form-input" min="0" required style="width: 100px;">
                                 <span style="color: #666;">days</span>
                             </div>
                         </div>
@@ -870,9 +85,9 @@
 
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Kid Permissions</span>
+                            <span class="text-title-sm">Kid Permissions</span>
                         </div>
-                        <div class="setting-subtitle">
+                        <div class="text-subtitle">
                             Kids can:
                         </div>
                         <div style="margin-top: 16px;">
@@ -909,44 +124,44 @@
 
                     <div class="setting-item">
                         <div class="setting-label">
-                            <span class="setting-title">Email Notifications</span>
+                            <span class="text-title-sm">Email Notifications</span>
                         </div>
                         <div style="margin-top: 16px;">
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailSmtpServer" style="min-width: 150px;" class="setting-name">SMTP Server:</label>
-                                <input type="text" id="emailSmtpServer" class="number-input" style="width: 300px;" placeholder="smtp.gmail.com">
+                                <input type="text" id="emailSmtpServer" class="form-input" style="width: 300px;" placeholder="smtp.gmail.com">
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailSmtpPort" style="min-width: 150px;" class="setting-name">SMTP Port:</label>
-                                <input type="number" id="emailSmtpPort" class="number-input" min="1" max="65535" placeholder="587">
+                                <input type="number" id="emailSmtpPort" class="form-input" min="1" max="65535" placeholder="587" style="width: 100px;">
                                 <span style="color: #666;">(usually 587 for TLS or 465 for SSL)</span>
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailUsername" style="min-width: 150px;" class="setting-name">Username:</label>
-                                <input type="text" id="emailUsername" class="number-input" style="width: 300px;" placeholder="your.email@example.com">
+                                <input type="text" id="emailUsername" class="form-input" style="width: 300px;" placeholder="your.email@example.com">
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailPassword" style="min-width: 150px;" class="setting-name">Password:</label>
-                                <input type="password" id="emailPassword" class="number-input" style="width: 300px;" placeholder="Leave empty to keep existing">
+                                <input type="password" id="emailPassword" class="form-input" style="width: 300px;" placeholder="Leave empty to keep existing">
                             </div>
                             <div class="input-group" style="margin-bottom: 12px;">
                                 <label for="emailSenderName" style="min-width: 150px;" class="setting-name">Sender Name:</label>
-                                <input type="text" id="emailSenderName" class="number-input" style="width: 300px;" placeholder="Family Chores">
+                                <input type="text" id="emailSenderName" class="form-input" style="width: 300px;" placeholder="Family Chores">
                             </div>
                             <div style="margin-top: 16px;">
                                 <div class="input-group" style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
                                     <label for="parentEmailAddresses" style="min-width: 150px;" class="setting-name">Parent Address(es):</label>
-                                    <input type="text" id="parentEmailAddresses" class="number-input" style="width: 300px;" placeholder="email1@example.com, email2@example.com">
+                                    <input type="text" id="parentEmailAddresses" class="form-input" style="width: 300px;" placeholder="email1@example.com, email2@example.com">
                                 </div>
                                 <div style="text-align: right; margin-bottom: 12px;">
-                                    <button type="button" class="btn-manual-cashout" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>
-                                    <button type="button" class="btn-manual-cashout" id="sendDigestBtn" onclick="sendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
+                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="testEmailBtn" onclick="sendTestEmail()">Send Test Email</button>
+                                    <button type="button" class="btn btn-white-on-purple btn-sm" id="sendDigestBtn" onclick="sendDailyDigest()" style="margin-left: 10px;">Send Daily Digest</button>
                                     <div id="emailTestMessage" class="system-message"></div>
                                 </div>
                                 
                             </div>
                                 <div class="setting-label" style="margin-bottom: 16px;">
-                                    <div class="setting-subtitle">
+                                    <div class="text-subtitle">
                                         Notify immediately when:
                                     </div>
                                     </div>
@@ -972,13 +187,13 @@
                                     </label>
                                 </div>
                                 <div class="setting-label" style="margin-bottom: 16px;">
-                                    <span class="setting-subtitle">Daily Digest</span>
+                                    <span class="text-subtitle">Daily Digest</span>
                                     <label class="toggle-switch">
                                         <input type="checkbox" id="emailNotifyDailyDigest">
                                         <span class="toggle-slider"></span>
                                     </label>
                                 </div>
-                                <div class="setting-description">
+                                <div class="text-body">
                                     Daily digest sent at midnight with today's history and current balances
                                 </div>
                     
@@ -987,19 +202,19 @@
                     </div>
 
                     <div class="button-group">
-                        <button type="submit" class="btn-primary">Save Settings</button>
-                        <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
+                        <button type="submit" class="btn-white-on-purple">Save Settings</button>
+                        <button type="button" class="btn-gray-on-cream" onclick="resetForm()">Reset</button>
                     </div>
                     
                 </form>
 
                 <div class="chores-section">
                     <div class="chores-section-header">
-                        <div class="chores-section-title" onclick="toggleChoresSection()">
+                        <div class="text-title-sm" onclick="toggleChoresSection()">
                             <span class="chores-toggle-icon" id="choresToggleIcon">▶</span>
-                            <span>Chore List</span>
+                            <span>Chore Management</span>
                         </div>
-                        <a href="/add-chore" class="btn-add-chore">Add Chore</a>
+                        <a href="/add-chore" class="btn btn-white-on-purple">Add Chore</a>
                     </div>
                     <div class="chores-section-content" id="choresSectionContent">
                         <div id="choresLoading" class="loading" style="display: none;">Loading chores...</div>
@@ -1034,9 +249,9 @@
                                     <tbody id="choresTableBody">
                                     </tbody>
                                 </table>
-                                <div id="choresEmptyState" class="chores-empty-state" style="display: none;">
-                                    <div class="chores-empty-state-icon">📋</div>
-                                    <div class="chores-empty-state-text">No chores found.</div>
+                                <div id="choresEmptyState" class="empty-state" style="display: none;">
+                                    <div class="empty-state-icon">📋</div>
+                                    <div class="empty-state-text">No chores found.</div>
                                 </div>
                             </div>
                         </div>
@@ -1045,11 +260,11 @@
 
                 <div class="chores-section">
                     <div class="chores-section-header">
-                        <div class="chores-section-title" onclick="toggleUsersSection()">
+                        <div class="text-title-sm" onclick="toggleUsersSection()">
                             <span class="chores-toggle-icon" id="usersToggleIcon">▶</span>
                             <span>User Management</span>
                         </div>
-                        <a href="/add-user" class="btn-add-chore">Add User</a>
+                        <a href="/add-user" class="btn btn-white-on-purple">Add User</a>
                     </div>
                     <div class="chores-section-content" id="usersSectionContent">
                         <div id="usersLoading" class="loading" style="display: none;">Loading users...</div>
@@ -1080,9 +295,9 @@
                                     <tbody id="usersTableBody">
                                     </tbody>
                                 </table>
-                                <div id="usersEmptyState" class="chores-empty-state" style="display: none;">
-                                    <div class="chores-empty-state-icon">👤</div>
-                                    <div class="chores-empty-state-text">No users found.</div>
+                                <div id="usersEmptyState" class="empty-state" style="display: none;">
+                                    <div class="empty-state-icon">👤</div>
+                                    <div class="empty-state-text">No users found.</div>
                                 </div>
                             </div>
                         </div>
@@ -1090,24 +305,24 @@
                 </div>
 
                 <div class="reset-section">
-                    <div class="reset-section-title">DANGER ZONE!</div>
+                    <div class="text-title-sm">DANGER ZONE!</div>
                     <div class="reset-buttons">
-                        <button class="btn-reset danger" onclick="confirmResetPoints()">Reset All Points Balances</button>
-                        <button class="btn-reset danger" onclick="confirmResetCash()">Reset All Cash Balances</button>
-                        <button class="btn-reset danger" onclick="confirmResetTransactions()">Reset All Historical Data</button>
+                        <button class="btn btn-red-on-white" onclick="confirmResetPoints()">Reset All Points Balances</button>
+                        <button class="btn btn-red-on-white" onclick="confirmResetCash()">Reset All Cash Balances</button>
+                        <button class="btn btn-red-on-white" onclick="confirmResetTransactions()">Reset All Historical Data</button>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Confirmation Dialog -->
-        <div id="confirmationDialog" class="confirmation-dialog">
-            <div class="confirmation-content">
-                <div class="confirmation-title" id="confirmTitle">Confirm Reset</div>
-                <div class="confirmation-message" id="confirmMessage"></div>
+        <div id="confirmationDialog" class="overlay">
+            <div class="overlay-content">
+                <div class="text-title" id="confirmTitle">Confirm Reset</div>
+                <div class="text-body text-body-lg" id="confirmMessage"></div>
                 <div class="confirmation-buttons">
-                    <button class="btn-confirm danger" id="confirmBtn" onclick="executeReset()">Confirm</button>
-                    <button class="btn-confirm secondary" onclick="closeConfirmation()">Cancel</button>
+                    <button class="btn btn-red-on-white btn-md" id="confirmBtn" onclick="executeReset()">Confirm</button>
+                    <button class="btn btn-gray-on-cream btn-md" onclick="closeConfirmation()">Cancel</button>
                 </div>
             </div>
         </div>
@@ -1432,13 +647,13 @@
         let editingChoreId = null;
 
         function getRepeatBadgeClass(repeat) {
-            if (!repeat) return 'repeat-none';
+            if (!repeat) return 'badge-none';
             const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'daily') return 'repeat-daily';
-            if (repeatLower === 'weekly') return 'repeat-weekly';
-            if (repeatLower === 'monthly') return 'repeat-monthly';
-            if (repeatLower === 'as_needed') return 'repeat-as_needed';
-            return 'repeat-none';
+            if (repeatLower === 'daily') return 'badge-daily';
+            if (repeatLower === 'weekly') return 'badge-weekly';
+            if (repeatLower === 'monthly') return 'badge-monthly';
+            if (repeatLower === 'as_needed') return 'badge-as-needed';
+            return 'badge-none';
         }
 
         function formatRepeat(repeat) {
@@ -1536,17 +751,17 @@
                 
                 if (isEditing) {
                     return `
-                        <tr class="editing" data-chore-id="${chore.chore_id}">
+                        <tr data-chore-id="${chore.chore_id}">
                             <td>
-                                <input type="text" class="edit-input" id="edit-chore-${chore.chore_id}" 
+                                <input type="text" class="form-input form-input-focus" id="edit-chore-${chore.chore_id}" 
                                        value="${escapeHtml(chore.chore)}" />
                             </td>
                             <td>
-                                <input type="number" class="edit-input" id="edit-point-${chore.chore_id}" 
+                                <input type="number" class="form-input form-input-focus" id="edit-point-${chore.chore_id}" 
                                        value="${chore.point_value || 0}" min="1" />
                             </td>
                             <td>
-                                <select class="edit-select" id="edit-repeat-${chore.chore_id}">
+                                <select class="form-select form-select-focus" id="edit-repeat-${chore.chore_id}">
                                     <option value="as_needed" ${chore.repeat === 'as_needed' ? 'selected' : ''}>As Needed</option>
                                     <option value="daily" ${chore.repeat === 'daily' ? 'selected' : ''}>Daily</option>
                                     <option value="weekly" ${chore.repeat === 'weekly' ? 'selected' : ''}>Weekly</option>
@@ -1554,8 +769,8 @@
                                     <option value="" ${!chore.repeat ? 'selected' : ''}>None</option>
                                 </select>
                                 <div class="edit-actions">
-                                    <button class="btn-save" onclick="saveChore(${chore.chore_id})">Save</button>
-                                    <button class="btn-cancel" onclick="cancelChoreEdit()">Cancel</button>
+                                    <button class="btn btn-green-on-mint btn-sm" onclick="saveChore(${chore.chore_id})">Save</button>
+                                    <button class="btn btn-gray-on-cream btn-sm" onclick="cancelChoreEdit()">Cancel</button>
                                 </div>
                             </td>
                             <td>
@@ -1572,14 +787,14 @@
                 
                 return `
                     <tr data-chore-id="${chore.chore_id}">
-                        <td class="chore-name editable" onclick="startChoreEdit(${chore.chore_id}, 'chore')">
+                        <td class="chores-chore-name editable" onclick="startChoreEdit(${chore.chore_id}, 'chore')">
                             ${escapeHtml(chore.chore)}
                         </td>
                         <td class="point-value editable" onclick="startChoreEdit(${chore.chore_id}, 'point_value')">
                             ${chore.point_value || 0}
                         </td>
                         <td class="editable" onclick="startChoreEdit(${chore.chore_id}, 'repeat')">
-                            <span class="repeat-badge ${repeatClass}">${escapeHtml(repeatText)}</span>
+                            <span class="badge ${repeatClass}">${escapeHtml(repeatText)}</span>
                         </td>
                         <td class="editable" onclick="startChoreEdit(${chore.chore_id}, 'requires_approval')">
                             ${chore.requires_approval ? '✓' : '✗'}
@@ -1817,7 +1032,7 @@
                                     ? `<img src="${avatarUrl}" alt="${escapeHtml(user.full_name)}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">`
                                     : `<span style="font-size: 24px;">👤</span>`
                                 }
-                                <span class="chore-name">${escapeHtml(user.full_name)}</span>
+                                <span style="font-weight: 600; color: #333; font-size: 16px;">${escapeHtml(user.full_name)}</span>
                             </div>
                         </td>
                         <td class="point-value">${user.balance || 0}</td>
