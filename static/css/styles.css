@@ -170,22 +170,6 @@ header h1 {
     margin: 20px 0;
 }
 
-.file-input-label {
-    display: inline-block;
-    padding: 12px 24px;
-    background: #667eea;
-    color: white;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.file-input-label:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
 .avatar-upload-actions {
     display: flex;
     gap: 12px;
@@ -294,15 +278,6 @@ header h1 {
 
 .pin-input-section.show {
     display: block;
-}
-
-.pin-input-label {
-    display: block;
-    font-size: 14px;
-    font-weight: 600;
-    color: #333;
-    margin-bottom: 8px;
-    text-align: left;
 }
 
 .pin-error {
@@ -670,19 +645,78 @@ select:focus {
 .mt-5 { margin-top: 40px; }
 
 /* Unified Label System */
-.label,
-.balance-label,
-.cash-balance-label,
-.system-time-label {
+.label-sm {
     font-size: 11px;
     color: #666;
     text-transform: uppercase;
     letter-spacing: 1px;
 }
 
-.system-time-label {
+.label-sm-center {
     margin-bottom: 4px;
     text-align: center;
+}
+
+.label-form,
+label {
+    display: block;
+    margin-bottom: 8px;
+    color: #333;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.label-form-bold {
+    font-weight: 600;
+}
+
+.label-button {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #667eea;
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.label-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.label-text {
+    font-size: 16px;
+    font-weight: normal;
+    color: #666;
+}
+
+.label-text-bold {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+/* Legacy aliases for settings page */
+.setting-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.setting-name {
+    font-size: 16px;
+    font-weight: normal;
+    color: #666;
 }
 
 /* Unified Section Dividers */
@@ -749,15 +783,7 @@ select:focus {
     margin-bottom: 24px;
 }
 
-label {
-    display: block;
-    margin-bottom: 8px;
-    color: #333;
-    font-weight: 500;
-    font-size: 14px;
-}
 
-/* Searchable Dropdown */
 .searchable-dropdown {
     position: relative;
     width: 100%;
@@ -983,10 +1009,6 @@ button:disabled:hover {
     margin-bottom: 0;
 }
 
-.confirmation-detail-label {
-    color: #666;
-}
-
 .confirmation-detail-value {
     font-weight: 600;
     color: #333;
@@ -1052,12 +1074,6 @@ button:disabled:hover {
 .redemption-option-icon {
     font-size: 32px;
     margin-bottom: 8px;
-}
-
-.redemption-option-label {
-    font-weight: 600;
-    color: #333;
-    margin-bottom: 4px;
 }
 
 .redemption-option-desc {
@@ -1483,19 +1499,6 @@ input[type="file"] {
 
 .setting-item:last-child {
     margin-bottom: 0;
-}
-
-.setting-label {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-
-.setting-name {
-    font-size: 16px;
-    font-weight: normal;
-    color: #666;
 }
 
 .toggle-switch {
