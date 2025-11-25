@@ -385,7 +385,7 @@ header h1 {
 }
 
 .btn-gray-on-cream {
-    background: #f5f5f5;
+    background: #dfdede;
     color: #333;
 }
 
@@ -472,12 +472,9 @@ header h1 {
     transform: none;
 }
 
-.btn-role.parent {
-    background: #667eea;
-    color: white;
-}
 
-.btn-role.kid {
+
+.btn-white-on-pink {
     background: #f093fb;
     color: white;
 }
@@ -941,21 +938,15 @@ button:active {
     transform: translateY(0);
 }
 
-.btn-white-on-purple {
-    background: #667eea;
-    color: white;
-}
-
-.btn-gray-on-cream {
-    background: #f5f5f5;
-    color: #333;
-}
 
 .btn-white-on-purple:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-    background: #cccccc;
-    filter: grayscale(100%);
+}
+
+.btn-white-on-pink:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 button:disabled:hover {

@@ -50,7 +50,7 @@
                     <div class="help-text">Points will be added to the user's balance</div>
                     
                     <div id="pointPreview" class="preview-box" style="display: none;">
-                        <div class="label">Points to Award</div>
+                        <div class="preview-detail">Points to Award</div>
                         <div class="preview-value" id="pointPreviewValue">0</div>
                     </div>
                 </div>
@@ -92,15 +92,15 @@
             const newBalance = (user.balance || 0) + points;
             detailsDiv.innerHTML = `
                 <div class="confirmation-detail-item">
-                    <span class="confirmation-detail-label">Chore:</span>
+                    <span class="confirmation-detail-value">Chore:</span>
                     <span class="confirmation-detail-value">${chore.chore}</span>
                 </div>
                 <div class="confirmation-detail-item">
-                    <span class="confirmation-detail-label">Points Earned:</span>
+                    <span class="confirmation-detail-value">Points Earned:</span>
                     <span class="confirmation-detail-value">${points}</span>
                 </div>
                 <div class="confirmation-detail-item">
-                    <span class="confirmation-detail-label">New Balance:</span>
+                    <span class="confirmation-detail-value">New Balance:</span>
                     <span class="confirmation-detail-value">${newBalance} points</span>
                 </div>
             `;

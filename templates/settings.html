@@ -751,7 +751,7 @@
                 
                 if (isEditing) {
                     return `
-                        <tr class="editing" data-chore-id="${chore.chore_id}">
+                        <tr data-chore-id="${chore.chore_id}">
                             <td>
                                 <input type="text" class="form-input form-input-focus" id="edit-chore-${chore.chore_id}" 
                                        value="${escapeHtml(chore.chore)}" />

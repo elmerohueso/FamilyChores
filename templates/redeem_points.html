@@ -30,7 +30,7 @@
 
                 <div class="form-group">
                     <label for="points">Points to Redeem *</label>
-                    <div class="points-input-group">
+                    <div class="input-group">
                         <input type="number" id="points" name="points" required min="5" step="5" value="" placeholder="Must be multiple of 5">
                     </div>
                     <div class="quick-select">
@@ -61,7 +61,7 @@
                 </div>
 
                 <div id="pointsPreview" class="preview-box large" style="display: none;">
-                    <div class="label">Redemption Summary</div>
+                    <div class="preview-detail">Redemption Summary</div>
                     <div class="preview-value" id="pointsPreviewValue">0</div>
                     <div class="preview-detail" id="redemptionPreview"></div>
                 </div>
@@ -332,19 +332,19 @@
             const newBalance = (user.balance || 0) - points;
             detailsDiv.innerHTML = `
                 <div class="confirmation-detail-item">
-                    <span class="confirmation-detail-label">Redemption Type:</span>
+                    <span class="confirmation-detail-value">Redemption Type:</span>
                     <span class="confirmation-detail-value">${redemptionType}</span>
                 </div>
                 <div class="confirmation-detail-item">
-                    <span class="confirmation-detail-label">Points Redeemed:</span>
+                    <span class="confirmation-detail-value">Points Redeemed:</span>
                     <span class="confirmation-detail-value">${points}</span>
                 </div>
                 <div class="confirmation-detail-item">
-                    <span class="confirmation-detail-label">Reward:</span>
+                    <span class="confirmation-detail-value">Reward:</span>
                     <span class="confirmation-detail-value">${redemptionText}</span>
                 </div>
                 <div class="confirmation-detail-item">
-                    <span class="confirmation-detail-label">New Balance:</span>
+                    <span class="confirmation-detail-value">New Balance:</span>
                     <span class="confirmation-detail-value">${newBalance} points</span>
                 </div>
             `;
