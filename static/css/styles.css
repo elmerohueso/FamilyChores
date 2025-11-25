@@ -558,7 +558,6 @@ input[type="text"],
 input[type="number"],
 input[type="time"],
 input[type="password"] {
-    width: 100%;
     padding: 12px 16px;
     border: 2px solid #e0e0e0;
     border-radius: 8px;
@@ -1090,10 +1089,6 @@ button:disabled:hover {
     display: flex;
     gap: 8px;
     align-items: center;
-}
-
-.input-group input {
-    flex: 1;
 }
 
 /* Unified Quick Select - applies to both points and cash */
