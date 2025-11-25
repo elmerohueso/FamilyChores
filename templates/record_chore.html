@@ -167,7 +167,7 @@
                 }
             } catch (error) {
                 console.error('Error loading users:', error);
-                showMessage('Error loading users. Please refresh the page.', true);
+                showToast('Error loading users. Please refresh the page.', true);
             }
         }
 
@@ -219,7 +219,7 @@
                 renderChoreDropdown();
             } catch (error) {
                 console.error('Error loading chores:', error);
-                showMessage('Error loading chores. Please refresh the page.', true);
+                showToast('Error loading chores. Please refresh the page.', true);
             }
         }
 
@@ -461,7 +461,7 @@
                     submitBtn.disabled = false;
                 }
             } catch (error) {
-                showMessage('Network error. Please try again.', true);
+                showToast('Network error. Please try again.', true);
                 console.error('Error:', error);
                 submitBtn.disabled = false;
             }
