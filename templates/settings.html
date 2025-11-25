@@ -857,6 +857,9 @@
                 return;
             }
 
+            // Save current scroll position
+            const scrollPosition = window.scrollY;
+
             try {
                 const response = await fetch(`/api/chores/${choreId}`, {
                     method: 'PUT',
@@ -877,6 +880,8 @@
                     showToast('Chore updated successfully!');
                     editingChoreId = null;
                     await loadChores();
+                    // Restore scroll position
+                    window.scrollTo(0, scrollPosition);
                 } else {
                     showToast(result.error || 'Error updating chore', true);
                 }
