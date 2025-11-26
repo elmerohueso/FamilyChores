@@ -25,6 +25,10 @@
                     <span class="search-icon">🔍</span>
                     <input type="text" id="searchInput" class="search-input" placeholder="Search chores...">
                 </div>
+                <div id="tableScrollTop" class="table-scroll-top">
+                    <div id="tableScrollTopInner" class="table-scroll-top-inner"></div>
+                </div>
+                <div id="tableScrollBottom" class="table-scroll-bottom">
                 <table id="choresTable">
                     <thead>
                         <tr>
@@ -53,6 +57,7 @@
                     <tbody id="choresTableBody">
                     </tbody>
                 </table>
+                </div>
                 <div id="emptyState" class="empty-state" style="display: none;">
                     <div class="empty-state-icon">📋</div>
                     <div class="empty-state-text">No chores found. Add your first chore!</div>
@@ -308,8 +313,26 @@
                     </tr>
                 `;
             }).join('');
+            updateScrollbarWidth();
         }
 
+        function updateScrollbarWidth() {
+            const table = document.getElementById('choresTable');
+            const topScroll = document.getElementById('tableScrollTopInner');
+            if (table && topScroll) {
+                topScroll.style.width = table.scrollWidth + 'px';
+            }
+        }
+
+        function syncScroll(source) {
+            const top = document.getElementById('tableScrollTop');
+            const bottom = document.getElementById('tableScrollBottom');
+            if (source === 'top') {
+                bottom.scrollLeft = top.scrollLeft;
+            } else {
+                top.scrollLeft = bottom.scrollLeft;
+            }
+        }
 
         async function loadChores() {
             try {
@@ -340,6 +363,10 @@
         document.getElementById('searchInput').addEventListener('input', () => {
             applyFiltersAndSort();
         });
+
+        // Sync scrollbars
+        document.getElementById('tableScrollTop').addEventListener('scroll', () => syncScroll('top'));
+        document.getElementById('tableScrollBottom').addEventListener('scroll', () => syncScroll('bottom'));
 
         // Load cooldown settings and chores when page loads
         loadCooldownSettings().then(() => {

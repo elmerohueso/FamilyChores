@@ -1628,6 +1628,20 @@ input:checked + .toggle-slider:before {
     overflow-x: auto;
 }
 
+.table-scroll-top {
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 20px;
+}
+
+.table-scroll-top-inner {
+    height: 1px;
+}
+
+.table-scroll-bottom {
+    overflow-x: auto;
+}
+
 /* Settings page tables - use global styles but override text-transform */
 #choresTable,
 #usersTable {
@@ -1697,6 +1711,22 @@ input:checked + .toggle-slider:before {
     color: #721c24;
     border: 1px solid #f5c6cb;
     display: block;
+}
+
+/* Table scroll containers for horizontal scrolling */
+.table-scroll-top {
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 20px;
+    margin-bottom: -20px;
+}
+
+.table-scroll-top-inner {
+    height: 1px;
+}
+
+.table-scroll-bottom {
+    overflow-x: auto;
 }
 
 
