@@ -66,6 +66,9 @@ Parents have full control over what kids can access through granular permission 
 - **Standardized toasts**: High-level system and network messages are shown via top-center toasts for consistent feedback across pages.
 - **Layout tweak**: User cards on the Home page now use a Flexbox-based layout to stay centered (especially for 1–2 users).
 - **Backend deletion order**: When deleting a user, their transactions are removed first to avoid foreign-key constraint errors.
+ - **Responsive / Mobile support**: Improved handling for narrow displays (phones and small tablets).
+
+
 ### Prerequisites
 - Docker
 - Docker Compose
