@@ -764,6 +764,14 @@ label {
     align-items: center;
 }
 
+/* Prevent header buttons from stretching in flex row */
+.header-nav button,
+.header-nav .btn-logout {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+}
+
 .nav-link {
     color: white;
     text-decoration: none;
@@ -1737,4 +1745,27 @@ input:checked + .toggle-slider:before {
     overflow-x: auto;
 }
 
-
+/* Responsive Media Queries */
+@media (max-width: 768px) {
+    /* Keep nav buttons pinned to top-left and top-right */
+    header {
+        padding-top: 56px; /* create space for absolute nav row */
+    }
+    
+    .header-nav {
+        position: absolute;
+        top: 8px;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between; /* keep corners */
+        align-items: center;
+        padding: 0 12px;
+    }
+    
+    header h1 {
+        font-size: 28px;
+        margin: 0;
+        text-align: center;
+    }
+}
