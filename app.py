@@ -32,7 +32,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '1.2.2'
+__version__ = '1.2.3'
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
@@ -376,8 +376,8 @@ def get_chores():
     """Get all chores. All chores are visible, but those with requires_approval=True are greyed out for kids."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # Return chores ordered by point value ascending by default
-    cursor.execute('SELECT * FROM chores ORDER BY point_value, chores ASC')
+    # Return chores ordered by point value, and treats leading underscores as spaces for sorting by chore name
+    cursor.execute('SELECT * FROM chores ORDER BY point_value, REPLACE(chore, \'_\', \' \') ASC')
     chores = cursor.fetchall()
     cursor.close()
     conn.close()

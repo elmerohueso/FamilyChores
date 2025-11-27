@@ -223,6 +223,10 @@
                                 <span class="search-icon">🔍</span>
                                 <input type="text" id="choresSearchInput" class="search-input" placeholder="Search chores...">
                             </div>
+                            <!-- Top scrollbar for horizontal scrolling on narrow screens -->
+                            <div id="choresTopScroll" class="table-scroll-top">
+                                <div id="choresTopScrollInner" class="table-scroll-top-inner"></div>
+                            </div>
                             <div class="chores-table-container">
                                 <table id="choresTable">
                                     <thead>
@@ -272,6 +276,10 @@
                             <div class="search-bar">
                                 <span class="search-icon">🔍</span>
                                 <input type="text" id="usersSearchInput" class="search-input" placeholder="Search users...">
+                            </div>
+                            <!-- Top scrollbar for horizontal scrolling on narrow screens -->
+                            <div id="usersTopScroll" class="table-scroll-top">
+                                <div id="usersTopScrollInner" class="table-scroll-top-inner"></div>
                             </div>
                             <div class="chores-table-container">
                                 <table id="usersTable">
@@ -768,10 +776,6 @@
                                     <option value="monthly" ${chore.repeat === 'monthly' ? 'selected' : ''}>Monthly</option>
                                     <option value="" ${!chore.repeat ? 'selected' : ''}>None</option>
                                 </select>
-                                <div class="edit-actions">
-                                    <button class="btn btn-green-on-mint btn-sm" onclick="saveChore(${chore.chore_id})">Save</button>
-                                    <button class="btn btn-gray-on-cream btn-sm" onclick="cancelChoreEdit()">Cancel</button>
-                                </div>
                             </td>
                             <td>
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -805,6 +809,9 @@
                     </tr>
                 `;
             }).join('');
+
+            // Update top scrollbar width after render
+            requestAnimationFrame(() => updateChoresTopScrollbarWidth());
         }
 
         function startChoreEdit(choreId, field) {
@@ -824,12 +831,125 @@
             } else if (field === 'requires_approval') {
                 document.getElementById(`edit-requires-${choreId}`)?.focus();
             }
+                        // Show floating popover with Save/Cancel under the edited row
+                        showEditActionsPopover(choreId);
         }
 
-        function cancelChoreEdit() {
-            editingChoreId = null;
-            renderChoresTable();
-        }
+                function cancelChoreEdit() {
+                        editingChoreId = null;
+                        hideEditActionsPopover();
+                        renderChoresTable();
+                }
+
+                let editPopoverEl = null;
+                let editPopoverHandlersBound = false;
+                let editPopoverClickAwayHandler = null;
+                let editPopoverFocusHandler = null;
+
+                function isSmallScreen() {
+                    try { return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; } catch { return window.innerWidth <= 768; }
+                }
+                function ensureEditPopover() {
+                    if (!editPopoverEl) {
+                        editPopoverEl = document.createElement('div');
+                        editPopoverEl.id = 'editActionsPopover';
+                        Object.assign(editPopoverEl.style, {
+                            position: 'absolute', zIndex: '1000', background: '#fff', border: '1px solid #e0e0e0',
+                            boxShadow: '0 6px 20px rgba(0,0,0,0.12)', borderRadius: '10px', padding: '10px', display: 'none'
+                        });
+                        document.body.appendChild(editPopoverEl);
+                    }
+                }
+                function positionEditPopoverForRow(rowEl) {
+                    if (!editPopoverEl || !rowEl) return;
+                    const rect = rowEl.getBoundingClientRect();
+                    editPopoverEl.style.display = 'block';
+                    editPopoverEl.style.width = 'auto';
+                    const popRect = editPopoverEl.getBoundingClientRect();
+                    const top = window.scrollY + rect.bottom + 8;
+                    let left = window.scrollX + rect.left + (rect.width - popRect.width) / 2;
+                    const maxLeft = window.scrollX + document.documentElement.clientWidth - popRect.width - 8;
+                    left = Math.max(window.scrollX + 8, Math.min(left, maxLeft));
+                    editPopoverEl.style.top = `${top}px`;
+                    editPopoverEl.style.left = `${left}px`;
+                }
+                function positionEditPopover(choreId) {
+                    const rowEl = document.querySelector(`#choresTableBody tr[data-chore-id="${choreId}"]`);
+                    if (!rowEl) return;
+                    let anchor = rowEl;
+                    if (isSmallScreen()) {
+                        const active = document.activeElement;
+                        if (active && rowEl.contains(active)) anchor = active;
+                    }
+                    const rect = anchor.getBoundingClientRect();
+                    editPopoverEl.style.display = 'block';
+                    editPopoverEl.style.width = 'auto';
+                    const popRect = editPopoverEl.getBoundingClientRect();
+                    const top = window.scrollY + rect.bottom + 8;
+                    let left = window.scrollX + rect.left + (rect.width - popRect.width) / 2;
+                    const maxLeft = window.scrollX + document.documentElement.clientWidth - popRect.width - 8;
+                    left = Math.max(window.scrollX + 8, Math.min(left, maxLeft));
+                    editPopoverEl.style.top = `${top}px`;
+                    editPopoverEl.style.left = `${left}px`;
+                }
+                function showEditActionsPopover(choreId) {
+                    ensureEditPopover();
+                    editPopoverEl.innerHTML = `<div style="display:flex; gap:8px; align-items:center; justify-content:center;">
+                        <button class="btn btn-green-on-mint btn-sm" onclick="saveChore(${choreId})">Save</button>
+                        <button class="btn btn-gray-on-cream btn-sm" onclick="cancelChoreEdit()">Cancel</button>
+                    </div>`;
+                    positionEditPopover(choreId);
+                    if (!editPopoverHandlersBound) {
+                        window.addEventListener('scroll', onEditPopoverReposition, { passive: true });
+                        window.addEventListener('resize', onEditPopoverReposition);
+                        editPopoverHandlersBound = true;
+                    }
+                    editPopoverEl.dataset.targetChoreId = String(choreId);
+                    if (!editPopoverClickAwayHandler) {
+                        editPopoverClickAwayHandler = (e) => {
+                            if (!editPopoverEl || editPopoverEl.style.display === 'none') return;
+                            const id = editPopoverEl.dataset.targetChoreId;
+                            const row = id ? document.querySelector(`#choresTableBody tr[data-chore-id="${id}"]`) : null;
+                            if (editPopoverEl.contains(e.target)) return; // clicks inside popover
+                            if (row && row.contains(e.target)) return; // clicks inside edited row
+                            cancelChoreEdit();
+                        };
+                        document.addEventListener('mousedown', editPopoverClickAwayHandler);
+                    }
+                    if (!editPopoverFocusHandler) {
+                        editPopoverFocusHandler = (e) => {
+                            if (!editPopoverEl || editPopoverEl.style.display === 'none') return;
+                            if (!isSmallScreen()) return;
+                            const id = editPopoverEl.dataset.targetChoreId;
+                            if (!id) return;
+                            const row = document.querySelector(`#choresTableBody tr[data-chore-id="${id}"]`);
+                            if (row && row.contains(e.target)) {
+                                positionEditPopover(id);
+                            }
+                        };
+                        document.addEventListener('focusin', editPopoverFocusHandler, true);
+                    }
+                }
+                function onEditPopoverReposition() {
+                    if (!editPopoverEl || editPopoverEl.style.display === 'none') return;
+                    const id = editPopoverEl.dataset.targetChoreId;
+                    if (!id) return;
+                    positionEditPopover(id);
+                }
+                function hideEditActionsPopover() {
+                    if (editPopoverEl) {
+                        editPopoverEl.style.display = 'none';
+                        editPopoverEl.dataset.targetChoreId = '';
+                    }
+                    if (editPopoverClickAwayHandler) {
+                        document.removeEventListener('mousedown', editPopoverClickAwayHandler);
+                        editPopoverClickAwayHandler = null;
+                    }
+                    if (editPopoverFocusHandler) {
+                        document.removeEventListener('focusin', editPopoverFocusHandler, true);
+                        editPopoverFocusHandler = null;
+                    }
+                }
 
         async function saveChore(choreId) {
             const choreInput = document.getElementById(`edit-chore-${choreId}`);
@@ -878,6 +998,7 @@
 
                 if (response.ok) {
                     showToast('Chore updated successfully!');
+                    hideEditActionsPopover();
                     editingChoreId = null;
                     await loadChores();
                     // Restore scroll position
@@ -913,10 +1034,45 @@
 
                 applyChoresFiltersAndSort();
 
+                // Setup top scrollbar sync for chores
+                setupChoresTopScrollbar();
+
             } catch (error) {
                 console.error('Error loading chores:', error);
                 document.getElementById('choresLoading').textContent = 'Error loading chores. Please try again.';
             }
+        }
+
+        function updateChoresTopScrollbarWidth() {
+            const table = document.getElementById('choresTable');
+            const topInner = document.getElementById('choresTopScrollInner');
+            if (table && topInner) {
+                topInner.style.width = table.scrollWidth + 'px';
+            }
+        }
+
+        function syncChoresScroll(source) {
+            const top = document.getElementById('choresTopScroll');
+            const container = document.querySelector('#choresSectionContent .chores-table-container');
+            if (!top || !container) return;
+            if (source === 'top') {
+                container.scrollLeft = top.scrollLeft;
+            } else {
+                top.scrollLeft = container.scrollLeft;
+            }
+        }
+
+        function setupChoresTopScrollbar() {
+            const top = document.getElementById('choresTopScroll');
+            const container = document.querySelector('#choresSectionContent .chores-table-container');
+            if (!top || !container) return;
+            if (!top.dataset.bound) {
+                top.addEventListener('scroll', () => syncChoresScroll('top'), { passive: true });
+                container.addEventListener('scroll', () => syncChoresScroll('bottom'), { passive: true });
+                window.addEventListener('resize', updateChoresTopScrollbarWidth);
+                top.dataset.bound = '1';
+            }
+            updateChoresTopScrollbarWidth();
         }
 
         // Toggle chores section
@@ -1048,6 +1204,9 @@
                     </tr>
                 `;
             }).join('');
+
+            // Update top scrollbar width after render
+            requestAnimationFrame(() => updateUsersTopScrollbarWidth());
         }
 
         async function loadUsers() {
@@ -1072,10 +1231,45 @@
 
                 applyUsersFiltersAndSort();
 
+                // Setup top scrollbar sync for users
+                setupUsersTopScrollbar();
+
             } catch (error) {
                 console.error('Error loading users:', error);
                 document.getElementById('usersLoading').textContent = 'Error loading users. Please try again.';
             }
+        }
+
+        function updateUsersTopScrollbarWidth() {
+            const table = document.getElementById('usersTable');
+            const topInner = document.getElementById('usersTopScrollInner');
+            if (table && topInner) {
+                topInner.style.width = table.scrollWidth + 'px';
+            }
+        }
+
+        function syncUsersScroll(source) {
+            const top = document.getElementById('usersTopScroll');
+            const container = document.querySelector('#usersSectionContent .chores-table-container');
+            if (!top || !container) return;
+            if (source === 'top') {
+                container.scrollLeft = top.scrollLeft;
+            } else {
+                top.scrollLeft = container.scrollLeft;
+            }
+        }
+
+        function setupUsersTopScrollbar() {
+            const top = document.getElementById('usersTopScroll');
+            const container = document.querySelector('#usersSectionContent .chores-table-container');
+            if (!top || !container) return;
+            if (!top.dataset.bound) {
+                top.addEventListener('scroll', () => syncUsersScroll('top'), { passive: true });
+                container.addEventListener('scroll', () => syncUsersScroll('bottom'), { passive: true });
+                window.addEventListener('resize', updateUsersTopScrollbarWidth);
+                top.dataset.bound = '1';
+            }
+            updateUsersTopScrollbarWidth();
         }
 
         // Toggle users section
