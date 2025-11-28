@@ -2530,6 +2530,12 @@ def start_job_timer():
 # Start the job timer for automatic daily cash out and daily digest emails
 start_job_timer()
 
+# PWA manifest route
+@app.route('/manifest.json')
+def manifest():
+    """Serve PWA manifest with correct content type."""
+    return send_from_directory('static', 'manifest.json', mimetype='application/manifest+json')
+
 
 if __name__ == '__main__':
     # Ensure database is initialized
