@@ -2539,5 +2539,5 @@ if __name__ == '__main__':
     except Exception as e:
         logger.info(f"Database initialization check failed (this is OK if tables already exist): {e}")
     
-    app.run(host='0.0.0.0', port=8000, debug=False)
+    app.run(host='0.0.0.0', port=8443, debug=False, ssl_context='adhoc')
 
