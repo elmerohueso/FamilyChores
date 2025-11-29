@@ -346,6 +346,30 @@ function showToast(text, isError = false) {
 }
 
 /**
+ * Create a new user
+ * @param {Object} userData - User data object
+ * @param {string} userData.name - User's name
+ * @param {number} userData.balance - Initial point balance
+ * @param {number} userData.cash_balance - Initial cash balance
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function createUser(userData) {
+    try {
+        const response = await fetch('/api/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(userData)
+        });
+        return response;
+    } catch (error) {
+        console.error('Error creating user:', error);
+        throw error;
+    }
+}
+
+/**
  * Preview avatar image with file validation
  * @param {Event} event - File input change event
  * @param {Object} config - Configuration object
