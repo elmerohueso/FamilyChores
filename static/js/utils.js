@@ -2,6 +2,21 @@
  * Family Chores - Utility Functions
  * Shared JavaScript utilities for URL management and user pre-selection
  */
+/**
+ * Get current user role from localStorage
+ * @returns {string|null} 'parent', 'kid', or null if not set
+ */
+function getRole() {
+    return localStorage.getItem('userRole');
+}
+
+/**
+ * Set current user role in localStorage
+ * @param {string} role - 'parent' or 'kid'
+ */
+function setRole(role) {
+    localStorage.setItem('userRole', role);
+}
 
 /**
  * Get URL parameter value

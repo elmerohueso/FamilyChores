@@ -379,9 +379,7 @@
             cleanUrl();
             
             try {
-                const response = await fetch('/api/get-role');
-                const result = await response.json();
-                const role = result.role;
+                const role = getRole();
                 
                 // Kids can access chores page, so no redirect needed here
                 // But if no role is set, redirect to index

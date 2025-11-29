@@ -96,15 +96,9 @@
             view_history: false
         };
 
-        // Check for existing role selection
-        function getRole() {
-            return localStorage.getItem('userRole');
-        }
+        // getRole is now defined in static/js/utils.js
 
-        function setRole(role) {
-            localStorage.setItem('userRole', role);
-            userRole = role;
-        }
+        // setRole is now defined in static/js/utils.js
 
         function showPinInput() {
             document.getElementById('pinInputSection').classList.add('show');
