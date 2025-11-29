@@ -168,14 +168,7 @@
                     // If avatar was selected, upload it
                     if (selectedAvatarFile) {
                         try {
-                            const avatarFormData = new FormData();
-                            avatarFormData.append('avatar', selectedAvatarFile);
-
-                            const avatarResponse = await fetch(`/api/users/${userId}/avatar`, {
-                                method: 'POST',
-                                body: avatarFormData
-                            });
-
+                            const avatarResponse = await uploadAvatar(userId, selectedAvatarFile);
                             const avatarResult = await avatarResponse.json();
 
                             if (avatarResponse.ok) {
