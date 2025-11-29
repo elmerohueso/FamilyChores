@@ -319,26 +319,10 @@
                     </tr>
                 `;
             }).join('');
-            updateScrollbarWidth();
+            updateScrollbarWidth('historyTable', 'tableScrollTopInner');
         }
 
-        function updateScrollbarWidth() {
-            const table = document.getElementById('historyTable');
-            const topScroll = document.getElementById('tableScrollTopInner');
-            if (table && topScroll) {
-                topScroll.style.width = table.scrollWidth + 'px';
-            }
-        }
-
-        function syncScroll(source) {
-            const top = document.getElementById('tableScrollTop');
-            const bottom = document.getElementById('tableScrollBottom');
-            if (source === 'top') {
-                bottom.scrollLeft = top.scrollLeft;
-            } else {
-                top.scrollLeft = bottom.scrollLeft;
-            }
-        }
+        // updateScrollbarWidth and syncScroll moved to static/js/utils.js
 
         // escapeHtml moved to static/js/utils.js
 
@@ -387,8 +371,8 @@
         });
 
         // Sync scrollbars
-        document.getElementById('tableScrollTop').addEventListener('scroll', () => syncScroll('top'));
-        document.getElementById('tableScrollBottom').addEventListener('scroll', () => syncScroll('bottom'));
+        document.getElementById('tableScrollTop').addEventListener('scroll', () => syncScroll('top', 'tableScrollTop', 'tableScrollBottom'));
+        document.getElementById('tableScrollBottom').addEventListener('scroll', () => syncScroll('bottom', 'tableScrollTop', 'tableScrollBottom'));
 
         // Load history when page loads
         loadHistory();

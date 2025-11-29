@@ -599,22 +599,7 @@
         let choresSortDirection = 'asc';
         let editingChoreId = null;
 
-        function getRepeatBadgeClass(repeat) {
-            if (!repeat) return 'badge-none';
-            const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'daily') return 'badge-daily';
-            if (repeatLower === 'weekly') return 'badge-weekly';
-            if (repeatLower === 'monthly') return 'badge-monthly';
-            if (repeatLower === 'as_needed') return 'badge-as-needed';
-            return 'badge-none';
-        }
-
-        function formatRepeat(repeat) {
-            if (!repeat) return 'None';
-            const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'as_needed') return 'As Needed';
-            return repeat.charAt(0).toUpperCase() + repeat.slice(1);
-        }
+        // getRepeatBadgeClass and formatRepeat moved to static/js/utils.js
 
         // escapeHtml moved to static/js/utils.js
 

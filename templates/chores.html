@@ -74,60 +74,7 @@
         let sortColumn = null;
         let sortDirection = 'asc';
 
-        function getRepeatBadgeClass(repeat) {
-            if (!repeat) return 'badge-none';
-            const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'daily') return 'badge-daily';
-            if (repeatLower === 'weekly') return 'badge-weekly';
-            if (repeatLower === 'monthly') return 'badge-monthly';
-            if (repeatLower === 'as_needed') return 'badge-as-needed';
-            return 'badge-none';
-        }
-
-        function formatRepeat(repeat) {
-            if (!repeat) return 'None';
-            const repeatLower = repeat.toLowerCase();
-            if (repeatLower === 'as_needed') return 'As Needed';
-            return repeat.charAt(0).toUpperCase() + repeat.slice(1);
-        }
-
-        function formatTimestamp(timestamp) {
-            if (!timestamp) return 'Never';
-            // Parse timestamp string directly without timezone conversion
-            // The timestamp is already in the server's local timezone (set via TZ)
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            
-            let year, month, day, hour, minute;
-            
-            if (typeof timestamp === 'string') {
-                // Parse ISO format string directly (e.g., "2024-01-15T12:30:00" or "2024-01-15T12:30:00-07:00")
-                const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-                if (match) {
-                    year = parseInt(match[1]);
-                    month = parseInt(match[2]) - 1; // 0-indexed
-                    day = parseInt(match[3]);
-                    hour = parseInt(match[4]);
-                    minute = parseInt(match[5]);
-                } else {
-                    // Fallback: try to parse as Date (may apply timezone conversion)
-                    const date = new Date(timestamp);
-                    year = date.getFullYear();
-                    month = date.getMonth();
-                    day = date.getDate();
-                    hour = date.getHours();
-                    minute = date.getMinutes();
-                }
-            } else {
-                return 'Never';
-            }
-            
-            // Format the date/time components
-            const hour12 = hour % 12 || 12;
-            const ampm = hour < 12 ? 'AM' : 'PM';
-            const minuteStr = minute.toString().padStart(2, '0');
-            
-            return `${months[month]} ${day}, ${year} ${hour12}:${minuteStr} ${ampm}`;
-        }
+        // formatRepeat, getRepeatBadgeClass, formatTimestamp moved to static/js/utils.js
 
         let cooldownSettings = {
             daily_cooldown_hours: 12,
@@ -282,26 +229,10 @@
                     </tr>
                 `;
             }).join('');
-            updateScrollbarWidth();
+            updateScrollbarWidth('choresTable', 'tableScrollTopInner');
         }
 
-        function updateScrollbarWidth() {
-            const table = document.getElementById('choresTable');
-            const topScroll = document.getElementById('tableScrollTopInner');
-            if (table && topScroll) {
-                topScroll.style.width = table.scrollWidth + 'px';
-            }
-        }
-
-        function syncScroll(source) {
-            const top = document.getElementById('tableScrollTop');
-            const bottom = document.getElementById('tableScrollBottom');
-            if (source === 'top') {
-                bottom.scrollLeft = top.scrollLeft;
-            } else {
-                top.scrollLeft = bottom.scrollLeft;
-            }
-        }
+        // updateScrollbarWidth and syncScroll moved to static/js/utils.js
 
         async function loadChores() {
             try {
@@ -333,8 +264,8 @@
         });
 
         // Sync scrollbars
-        document.getElementById('tableScrollTop').addEventListener('scroll', () => syncScroll('top'));
-        document.getElementById('tableScrollBottom').addEventListener('scroll', () => syncScroll('bottom'));
+        document.getElementById('tableScrollTop').addEventListener('scroll', () => syncScroll('top', 'tableScrollTop', 'tableScrollBottom'));
+        document.getElementById('tableScrollBottom').addEventListener('scroll', () => syncScroll('bottom', 'tableScrollTop', 'tableScrollBottom'));
 
         // Load cooldown settings and chores when page loads
         loadCooldownSettings().then(() => {

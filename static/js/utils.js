@@ -723,3 +723,102 @@ function previewAvatar(event, config) {
         reader.readAsDataURL(file);
     }
 }
+
+/**
+ * Format repeat frequency with proper casing
+ * @param {string} repeat - Repeat frequency value
+ * @returns {string} Formatted repeat string
+ */
+function formatRepeat(repeat) {
+    if (!repeat) return 'None';
+    const repeatLower = repeat.toLowerCase();
+    if (repeatLower === 'as_needed') return 'As Needed';
+    return repeat.charAt(0).toUpperCase() + repeat.slice(1);
+}
+
+/**
+ * Get badge CSS class for repeat frequency
+ * @param {string} repeat - Repeat frequency value
+ * @returns {string} Badge class name
+ */
+function getRepeatBadgeClass(repeat) {
+    if (!repeat) return 'badge-none';
+    const repeatLower = repeat.toLowerCase();
+    if (repeatLower === 'daily') return 'badge-daily';
+    if (repeatLower === 'weekly') return 'badge-weekly';
+    if (repeatLower === 'monthly') return 'badge-monthly';
+    if (repeatLower === 'as_needed') return 'badge-as-needed';
+    return 'badge-none';
+}
+
+/**
+ * Format timestamp to readable date/time string
+ * @param {string} timestamp - ISO timestamp string
+ * @returns {string} Formatted date/time
+ */
+function formatTimestamp(timestamp) {
+    if (!timestamp) return 'Never';
+    // Parse timestamp string directly without timezone conversion
+    // The timestamp is already in the server's local timezone (set via TZ)
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    let year, month, day, hour, minute;
+    
+    if (typeof timestamp === 'string') {
+        // Parse ISO format string directly (e.g., "2024-01-15T12:30:00" or "2024-01-15T12:30:00-07:00")
+        const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+        if (match) {
+            year = parseInt(match[1]);
+            month = parseInt(match[2]) - 1; // 0-indexed
+            day = parseInt(match[3]);
+            hour = parseInt(match[4]);
+            minute = parseInt(match[5]);
+        } else {
+            // Fallback: try to parse as Date (may apply timezone conversion)
+            const date = new Date(timestamp);
+            year = date.getFullYear();
+            month = date.getMonth();
+            day = date.getDate();
+            hour = date.getHours();
+            minute = date.getMinutes();
+        }
+    } else {
+        return 'Never';
+    }
+    
+    // Format the date/time components
+    const hour12 = hour % 12 || 12;
+    const ampm = hour < 12 ? 'AM' : 'PM';
+    const minuteStr = minute.toString().padStart(2, '0');
+    
+    return `${months[month]} ${day}, ${year} ${hour12}:${minuteStr} ${ampm}`;
+}
+
+/**
+ * Update scrollbar width for synchronized horizontal scrolling
+ * @param {string} tableId - ID of the table element
+ * @param {string} scrollTopInnerId - ID of the top scroll inner element
+ */
+function updateScrollbarWidth(tableId, scrollTopInnerId) {
+    const table = document.getElementById(tableId);
+    const topScroll = document.getElementById(scrollTopInnerId);
+    if (table && topScroll) {
+        topScroll.style.width = table.scrollWidth + 'px';
+    }
+}
+
+/**
+ * Synchronize scroll position between top and bottom scrollbars
+ * @param {string} source - Source scrollbar ('top' or 'bottom')
+ * @param {string} topScrollId - ID of top scroll element
+ * @param {string} bottomScrollId - ID of bottom scroll element
+ */
+function syncScroll(source, topScrollId, bottomScrollId) {
+    const top = document.getElementById(topScrollId);
+    const bottom = document.getElementById(bottomScrollId);
+    if (source === 'top') {
+        bottom.scrollLeft = top.scrollLeft;
+    } else {
+        top.scrollLeft = bottom.scrollLeft;
+    }
+}
