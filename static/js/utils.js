@@ -289,3 +289,20 @@ async function loadAppFooter() {
         console.error('Error loading app footer:', error);
     }
 }
+
+async function uploadAvatar(user_id, selectedAvatarFile) {
+
+        const formData = new FormData();
+        formData.append('avatar', selectedAvatarFile);
+
+        try {
+            const response = await fetch(`/api/users/${user_id}/avatar`, {
+                method: 'POST',
+                body: formData
+            });
+
+            return response;
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }

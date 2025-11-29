@@ -78,7 +78,7 @@
                 <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" onchange="previewAvatar(event)">
             </div>
             <div class="avatar-upload-actions">
-                <button class="btn btn-white-on-purple" onclick="uploadAvatar()" id="uploadBtn" disabled>Upload</button>
+                <button class="btn btn-white-on-purple" onclick="processAvatar()" id="uploadBtn" disabled>Upload</button>
                 <button class="btn btn-gray-on-cream" onclick="closeAvatarUpload()">Cancel</button>
             </div>
             <div id="avatarMessage" style="margin-top: 15px; font-size: 14px; color: #666; display: none;"></div>
@@ -347,20 +347,9 @@
             messageDiv.style.display = 'block';
         }
 
-        async function uploadAvatar() {
-            if (!selectedAvatarFile || !currentUserId) {
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('avatar', selectedAvatarFile);
-
+        async function processAvatar() {            
             try {
-                const response = await fetch(`/api/users/${currentUserId}/avatar`, {
-                    method: 'POST',
-                    body: formData
-                });
-
+                const response = await uploadAvatar(currentUserId, selectedAvatarFile);
                 const result = await response.json();
 
                 if (response.ok) {
