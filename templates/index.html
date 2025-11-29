@@ -89,7 +89,7 @@
         let currentUserId = null;
         let selectedAvatarFile = null;
         let userRole = null;
-        let kidPermissions = {
+        let permissions = {
             record_chore: false,
             redeem_points: false,
             withdraw_cash: false,
@@ -175,7 +175,7 @@
                 if (response.ok) {
                     setRole(role);
                     // Reload permissions in case settings changed
-                    await loadKidPermissions();
+                    await getPermissions();
                         const roleOverlay = document.getElementById('roleSelectionOverlay');
                         roleOverlay.classList.remove('show');
                         roleOverlay.classList.add('hidden');
@@ -229,21 +229,7 @@
             }
         }
 
-        async function loadKidPermissions() {
-            try {
-                const response = await fetch('/api/settings');
-                const settings = await response.json();
-                kidPermissions = {
-                    record_chore: settings.kid_allowed_record_chore || false,
-                    redeem_points: settings.kid_allowed_redeem_points || false,
-                    withdraw_cash: settings.kid_allowed_withdraw_cash || false,
-                    view_history: settings.kid_allowed_view_history || false
-                };
-            } catch (error) {
-                console.error('Error loading kid permissions:', error);
-                // Keep defaults if error occurs
-            }
-        }
+        // getPermissions is now defined in static/js/utils.js
 
         // Show role selection on page load if not already selected
         window.addEventListener('DOMContentLoaded', async () => {
@@ -251,7 +237,7 @@
             cleanUrl();
             
             // Load kid permissions first
-            await loadKidPermissions();
+            kidPermissions = await getPermissions();
             
             const role = getRole();
             if (!role) {
@@ -326,11 +312,11 @@
                                     <a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>
                                     <a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>
                                 ` : `
-                                    ${kidPermissions.record_chore ? `<a href="/record-chore?user_id=${user.user_id}" class="btn btn-white-on-purple btn-sm" onclick="event.stopPropagation();" style="display: block;">Record a Chore</a>` : ''}
-                                    ${kidPermissions.redeem_points ? `<a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>` : ''}
-                                    ${kidPermissions.withdraw_cash ? `<a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>` : ''}
+                                    ${permissions.record_chore ? `<a href="/record-chore?user_id=${user.user_id}" class="btn btn-white-on-purple btn-sm" onclick="event.stopPropagation();" style="display: block;">Record a Chore</a>` : ''}
+                                    ${permissions.redeem_points ? `<a href="/redeem-points?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block;">Redeem Points</a>` : ''}
+                                    ${permissions.withdraw_cash ? `<a href="/withdraw-cash?user_id=${user.user_id}" class="btn btn-gray-on-cream btn-sm" onclick="event.stopPropagation();" style="display: block; background: #e8f5e9; color: #2e7d32;">Withdraw Cash</a>` : ''}
                                 `}
-                                ${(getRole() !== 'kid' || kidPermissions.view_history) ? `<a href="/history?user_id=${user.user_id}" class="btn btn-blue-on-aero btn-sm" onclick="event.stopPropagation();" style="display: block;">View History</a>` : ''}
+                                ${(getRole() !== 'kid' || permissions.view_history) ? `<a href="/history?user_id=${user.user_id}" class="btn btn-blue-on-aero btn-sm" onclick="event.stopPropagation();" style="display: block;">View History</a>` : ''}
                             </div>
                         </div>
                     `;
