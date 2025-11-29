@@ -263,8 +263,7 @@
         });
         async function loadUsers() {
             try {
-                const response = await fetch('/api/users');
-                const users = await response.json();
+                const users = await getUsers();
 
                 const loadingDiv = document.getElementById('loading');
                 const usersContainer = document.getElementById('usersContainer');

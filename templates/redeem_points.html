@@ -184,8 +184,7 @@
 
         async function loadUsers() {
             try {
-                const response = await fetch('/api/users');
-                users = await response.json();
+                users = await getUsers();
                 
                 const userSelect = document.getElementById('user_id');
                 userSelect.innerHTML = '<option value="">Select a user...</option>';

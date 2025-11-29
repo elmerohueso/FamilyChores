@@ -1218,8 +1218,7 @@
                 usersLoading.style.display = 'block';
                 usersContainer.style.display = 'none';
 
-                const response = await fetch('/api/users');
-                allUsers = await response.json();
+                allUsers = await getUsers();
 
                 usersLoading.style.display = 'none';
                 usersContainer.style.display = 'block';

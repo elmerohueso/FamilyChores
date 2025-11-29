@@ -119,6 +119,24 @@ async function getSettings() {
 }
 
 /**
+ * Fetch and return all users.
+ * @returns {Promise<Array>} Array of user objects from /api/users
+ */
+async function getUsers() {
+    try {
+        const response = await fetch('/api/users');
+        if (!response.ok) {
+            throw new Error(`Failed to load users: ${response.status}`);
+        }
+        const users = await response.json();
+        return users;
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        return [];
+    }
+}
+
+/**
  * Logout the current user (clears role and reloads page)
  */
 async function logout() {
