@@ -73,3 +73,25 @@ function getUserFilterFromUrl() {
     }
     return null;
 }
+
+/**
+ * Logout the current user (clears role and reloads page)
+ */
+async function logout() {
+    // Clear the role from localStorage
+    localStorage.removeItem('userRole');
+    // Clear role from session on server
+    try {
+        await fetch('/api/set-role', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ role: '' })
+        });
+    } catch (error) {
+        console.error('Error clearing role:', error);
+    }
+    // Reload the page to show role selection again
+    window.location.reload();
+}
