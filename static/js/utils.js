@@ -18,26 +18,7 @@ function setLocalRole(role) {
     localStorage.setItem('userRole', role);
 }
 
-/**
- * Set role in session on server
- * @param {string} role - 'parent', 'kid', or '' to clear
- * @returns {Promise<boolean>} True if successful, false otherwise
- */
-async function setServerRole(role) {
-    try {
-        const response = await fetch('/api/set-role', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ role: role })
-        });
-        return response.ok;
-    } catch (error) {
-        console.error('Error setting role on server:', error);
-        return false;
-    }
-}
+
 
 /**
  * Validate parent PIN
@@ -443,19 +424,7 @@ async function setServerRole(role) {
             body: JSON.stringify({ role: role })
         });
 
-        if (response.ok) {
-            setLocalRole(role);
-            // Reload permissions in case settings changed
-            permissions = await getPermissions();
-                const roleOverlay = document.getElementById('roleSelectionOverlay');
-                roleOverlay.classList.remove('show');
-                roleOverlay.classList.add('hidden');
-            applyRoleRestrictions();
-            // Load users after role is set to apply restrictions
-            loadUsers();
-        } else {
-            console.error('Failed to set role on server');
-        }
+        return response
     } catch (error) {
         console.error('Error setting role:', error);
     }
@@ -465,8 +434,14 @@ async function setServerRole(role) {
  * Logout the current user (clears role and reloads page)
  */
 async function logout() {
-    // Clear role from session on server
-    await setServerRole('');
+    try {
+        // Clear role on server (ignore response outcome for now)
+        await setServerRole('');
+    } catch (e) {
+        console.error('Server role clear failed (continuing logout):', e);
+    }
+    // Clear local stored role so page load shows selection overlay
+    setLocalRole('');
     // Reload the page to show role selection again
     window.location.reload();
 }

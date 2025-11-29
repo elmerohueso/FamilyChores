@@ -147,8 +147,8 @@
         }
 
         async function selectRole(role) {
-            const success = await setServerRole(role);
-            if (success) {
+            const response = await setServerRole(role);
+            if (response && response.ok) {
                 setLocalRole(role);
                 // Reload permissions in case settings changed
                 permissions = await getPermissions();
