@@ -130,32 +130,17 @@
             submitBtn.disabled = true;
             submitBtn.textContent = 'Validating...';
 
-            try {
-                const response = await fetch('/api/validate-pin', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ pin: pin })
-                });
+            const result = await validatePin(pin);
 
-                const result = await response.json();
-
-                if (response.ok && result.valid) {
-                    // PIN is valid, proceed with Parent login
-                    selectRole('parent');
-                } else {
-                    // Invalid PIN
-                    pinError.textContent = result.error || 'Invalid PIN. Please try again.';
-                    pinError.classList.add('show');
-                    pinInput.value = '';
-                    pinInput.focus();
-                }
-            } catch (error) {
-                pinError.textContent = 'Network error. Please try again.';
+            if (result.valid) {
+                // PIN is valid, proceed with Parent login
+                selectRole('parent');
+            } else {
+                // Invalid PIN
+                pinError.textContent = result.error || 'Invalid PIN. Please try again.';
                 pinError.classList.add('show');
-                console.error('Error:', error);
-            } finally {
+                pinInput.value = '';
+                pinInput.focus();
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Login';
             }

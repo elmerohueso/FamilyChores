@@ -40,6 +40,34 @@ async function setServerRole(role) {
 }
 
 /**
+ * Validate parent PIN
+ * @param {string} pin - PIN to validate
+ * @returns {Promise<{valid: boolean, error?: string}>} Validation result
+ */
+async function validatePin(pin) {
+    try {
+        const response = await fetch('/api/validate-pin', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ pin: pin })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            return result;
+        } else {
+            return { valid: false, error: result.error || 'Invalid PIN' };
+        }
+    } catch (error) {
+        console.error('Error validating PIN:', error);
+        return { valid: false, error: 'Network error. Please try again.' };
+    }
+}
+
+/**
  * Get URL parameter value
  * @param {string} name - Parameter name
  * @returns {string|null} Parameter value or null if not found
