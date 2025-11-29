@@ -340,11 +340,7 @@
             }
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        // escapeHtml moved to static/js/utils.js
 
         // showToast: use global `showToast` if available, otherwise create a simple toast.
         function showToast(text, isError = false) {

@@ -157,3 +157,14 @@ async function logout() {
     // Reload the page to show role selection again
     window.location.reload();
 }
+
+/**
+ * Safely escape text for HTML insertion
+ * @param {string} text - Raw text to escape
+ * @returns {string} Escaped HTML string
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}

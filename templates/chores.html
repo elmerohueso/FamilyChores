@@ -170,11 +170,7 @@
             return false; // No cooldown for other repeat types
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        // escapeHtml moved to static/js/utils.js
 
         function showMessage(text, isError = false) {
             const messageDiv = document.getElementById('message');
