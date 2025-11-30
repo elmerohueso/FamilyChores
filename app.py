@@ -2531,9 +2531,17 @@ def start_job_timer():
 start_job_timer()
 
 
-if __name__ == '__main__':
-    # Ensure database is initialized
+if __name__ == '__main__':    
     from init_db import init_database
+    from backup_db import backup_database
+
+    # Ensure existing database is backed up on startup
+    try:
+        backup_database()
+    except Exception as e:
+        logger.info(f"Database backup failed (this is OK if this is a new environment): {e}")
+
+    # Ensure database is initialized
     try:
         init_database()
     except Exception as e:

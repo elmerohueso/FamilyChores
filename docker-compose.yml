@@ -27,6 +27,7 @@ services:
       - 8000:8000
     volumes:
       - avatar_data:/data/avatars
+      - backup_data:/data/backups
     environment:
       - FLASK_ENV=development
       - SECRET_KEY=dev-secret-key-change-in-production
@@ -52,3 +53,4 @@ networks:
 volumes:
   db_data:
   avatar_data:
+  backup_data:
