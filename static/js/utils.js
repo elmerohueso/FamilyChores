@@ -15,7 +15,65 @@ function getRole() {
  * @param {string} role - 'parent' or 'kid'
  */
 function setLocalRole(role) {
-    localStorage.setItem('userRole', role);
+    // Only store known valid roles in localStorage to avoid stale or spoofed values
+    if (role === 'kid' || role === 'parent') {
+        localStorage.setItem('userRole', role);
+        // Optional timestamp to help detect stale entries
+        try {
+            localStorage.setItem('userRole_ts', Date.now().toString());
+        } catch (e) {
+            // Ignore storage errors (e.g., quota)
+        }
+    } else {
+        // Remove any previously stored role if the provided value is invalid
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('userRole_ts');
+    }
+}
+
+/**
+ * Check server session role on page load and redirect if unauthorized.
+ * - Stores role in localStorage when present
+ * - If no role and user is not on the public index page (`/`), redirect to `/`
+ */
+async function checkRoleOnLoad() {
+    try {
+        const resp = await fetch('/api/get-role');
+        if (!resp.ok) {
+            // If the request fails, don't block the page; just log and return
+            console.warn('Failed to fetch role:', resp.status);
+            return;
+        }
+
+        const data = await resp.json();
+        const role = data && data.role ? data.role : null;
+
+        // Only persist allowed roles coming from the server session
+        if (role === 'kid' || role === 'parent') {
+            setLocalRole(role);
+            return;
+        }
+
+        // Clear any stored role when server reports no valid role
+        setLocalRole(null);
+
+        // No role on server session. Redirect to index if we're on a protected page.
+        // Allow the public landing page at `/` to load without a role.
+        const pathname = window.location.pathname || '/';
+        if (pathname !== '/') {
+            window.location.replace('/');
+        }
+    } catch (err) {
+        console.error('Error checking role on load:', err);
+    }
+}
+
+// Run role check after DOM is ready
+if (document && document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', () => {
+        // Fire-and-forget
+        checkRoleOnLoad();
+    });
 }
 
 
