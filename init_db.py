@@ -189,6 +189,38 @@ def init_database():
         )
     ''')
     
+    # Create roles table and seed defaults only if the table does not already exist
+    cursor.execute('''
+        DO $$
+        BEGIN
+            -- Ensure pgcrypto extension for gen_random_uuid()
+            IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pgcrypto') THEN
+                CREATE EXTENSION pgcrypto;
+            END IF;
+
+            -- Create table and seed defaults only when table is not present
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.tables WHERE table_name = 'roles'
+            ) THEN
+                CREATE TABLE roles (
+                    role_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    role_name VARCHAR(100) NOT NULL UNIQUE,
+                    can_record_chore BOOLEAN DEFAULT FALSE,
+                    can_redeem_points BOOLEAN DEFAULT FALSE,
+                    can_withdraw_cash BOOLEAN DEFAULT FALSE,
+                    can_view_history BOOLEAN DEFAULT FALSE,
+                    is_parent BOOLEAN DEFAULT FALSE
+                );
+
+                -- Seed default roles
+                INSERT INTO roles (role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history, is_parent)
+                VALUES
+                    ('Parent', TRUE, TRUE, TRUE, TRUE, TRUE),
+                    ('Kid', FALSE, FALSE, FALSE, FALSE, FALSE);
+            END IF;
+        END
+        $$;
+    ''')
     # Create settings table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
