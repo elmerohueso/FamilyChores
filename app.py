@@ -2533,13 +2533,19 @@ start_job_timer()
 
 if __name__ == '__main__':    
     from init_db import init_database
-    from backup_db import backup_database
+    from backup_db import backup_database, delete_old_backups
 
     # Ensure existing database is backed up on startup
     try:
         backup_database()
     except Exception as e:
         logger.info(f"Database backup failed (this is OK if this is a new environment): {e}")
+
+    # Delete old database backups
+    try:
+        delete_old_backups()
+    except Exception as e:
+        logger.info(f"Failed to deleted old database backups: {e}")
 
     # Ensure database is initialized
     try:

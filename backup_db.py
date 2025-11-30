@@ -1,6 +1,6 @@
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Database connection configuration from environment variables
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
@@ -34,5 +34,50 @@ def backup_database(output_dir="backups"):
         print(f"Backup failed: {e}")
         return None
 
+def delete_old_backups():
+    """
+    Keep only the 2 most recent backup files in /data/backups.
+    """
+    keep = 2
+    backup_dir = "/data/backups"
+    if not os.path.isdir(backup_dir):
+        print(f"Backup dir not found: {backup_dir}")
+        return
+
+    # Collect (mtime, path) for regular files
+    files = []
+    for filename in os.listdir(backup_dir):
+        file_path = os.path.join(backup_dir, filename)
+        if os.path.isfile(file_path) and filename.lower().endswith('.sql'):
+            try:
+                mtime = os.path.getmtime(file_path)
+                files.append((mtime, file_path))
+            except OSError:
+                # Skip files we can't stat
+                continue
+
+    # Nothing to do if files are fewer than or equal to keep
+    if len(files) <= keep:
+        print("No old backups deleted.")
+        return
+
+    # Sort by mtime descending (newest first) and keep the first `keep`
+    files.sort(key=lambda x: x[0], reverse=True)
+    to_delete = files[keep:]
+
+    deleted_files = []
+    for _, file_path in to_delete:
+        try:
+            os.remove(file_path)
+            deleted_files.append(os.path.basename(file_path))
+        except OSError as e:
+            print(f"Failed to delete {file_path}: {e}")
+
+    if deleted_files:
+        print(f"Deleted old backups: {', '.join(deleted_files)}")
+    else:
+        print("No old backups deleted.")
+
 if __name__ == '__main__':
     backup_database()
+    delete_old_backups()
