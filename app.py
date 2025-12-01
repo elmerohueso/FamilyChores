@@ -315,6 +315,12 @@ def kid_permission_required(permission_key):
 @app.route('/')
 def index():
     """Home page."""
+    return render_template('index.html')
+
+
+@app.route('/dashboard')
+def dashboard_page():
+    """Dashboard route serving the main application UI."""
     return render_template('dashboard.html')
 
 @app.route('/api/validate-pin', methods=['POST'])
@@ -493,6 +499,125 @@ def api_auth_logout():
     except Exception:
         pass
     return resp, 200
+
+
+@app.route('/api/tenant-login', methods=['POST'])
+def api_tenant_login():
+    """Tenant login endpoint used by the tenant sign-in page.
+
+    Expects JSON: { tenant: <tenant_name>, username: <optional>, password: <password> }
+    On success:
+      - sets HttpOnly cookie `tenant_id` (so JS cannot read it)
+      - sets HttpOnly cookie `refresh_token` (rotation/refresh flow)
+      - returns JSON { token: <access_token>, expires_in: <seconds> }
+    """
+    data = request.get_json(force=True) or {}
+    tenant = data.get('tenant') or data.get('tenant_name')
+    password = data.get('password')
+
+    if not tenant or not password:
+        return jsonify({'error': 'Missing tenant or password'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Look up tenant credentials
+    cur.execute("SELECT tenant_id, tenant_password FROM tenants WHERE tenant_name = %s", (tenant,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    tenant_id, stored = row[0], row[1]
+
+    # Only accept Argon2-formatted hashes
+    if not (isinstance(stored, str) and stored.startswith('$argon2')):
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    try:
+        ph.verify(stored, password)
+        # Rehash transparently if parameters changed
+        try:
+            if ph.check_needs_rehash(stored):
+                new_hash = ph.hash(password)
+                cur.execute('UPDATE tenants SET tenant_password = %s WHERE tenant_id = %s', (new_hash, tenant_id))
+                conn.commit()
+        except Exception:
+            pass
+    except argon2_exceptions.VerifyMismatchError:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    # Issue tokens
+    access_token = create_access_token(tenant_id)
+    refresh_token, refresh_expires = create_refresh_token_record(conn, tenant_id, request.headers.get('User-Agent'), request.remote_addr)
+
+    # Set cookies: refresh_token and tenant_id (HttpOnly)
+    resp = jsonify({'token': access_token, 'expires_in': ACCESS_TOKEN_EXPIRES})
+    # refresh_token cookie (long-lived)
+    resp.set_cookie('refresh_token', refresh_token, httponly=True, secure=False, samesite='Strict', expires=refresh_expires)
+    # tenant_id cookie (HttpOnly so JS cannot access it)
+    # set expiry similar to refresh token so tenant association persists
+    resp.set_cookie('tenant_id', str(tenant_id), httponly=True, secure=False, samesite='Strict', expires=refresh_expires)
+
+    try:
+        log_system_event('tenant_login', 'Tenant login success', {'tenant_id': tenant_id}, 'success')
+    except Exception:
+        pass
+
+    cur.close()
+    conn.close()
+    return resp, 200
+
+
+@app.route('/api/auth-check', methods=['GET'])
+def api_auth_check():
+    """Validate current authentication state.
+
+    Checks Authorization: Bearer <token> header or refresh_token cookie. If valid,
+    returns 200 and ensures HttpOnly `tenant_id` cookie is set.
+    """
+    # 1) Try Authorization header (Bearer)
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        token = auth.split(None, 1)[1]
+        try:
+            payload = jwt.decode(token, app.secret_key, algorithms=[JWT_ALGORITHM])
+            tenant_id = payload.get('sub')
+            # Ensure tenant_id cookie exists and matches; set if missing
+            resp = jsonify({'tenant_id': tenant_id})
+            if not request.cookies.get('tenant_id') or request.cookies.get('tenant_id') != str(tenant_id):
+                expires = datetime.utcnow() + timedelta(seconds=REFRESH_TOKEN_EXPIRES)
+                resp.set_cookie('tenant_id', str(tenant_id), httponly=True, secure=False, samesite='Strict', expires=expires)
+            return resp, 200
+        except Exception:
+            # fall through to check refresh token
+            pass
+
+    # 2) Try refresh token cookie
+    refresh = request.cookies.get('refresh_token')
+    if refresh:
+        conn = get_db_connection()
+        valid = validate_refresh_token(conn, refresh)
+        if valid:
+            tenant_id = valid['tenant_id']
+            # Optionally rotate refresh token here, but keep simple: validate only
+            resp = jsonify({'tenant_id': tenant_id})
+            expires = datetime.utcnow() + timedelta(seconds=REFRESH_TOKEN_EXPIRES)
+            resp.set_cookie('tenant_id', str(tenant_id), httponly=True, secure=False, samesite='Strict', expires=expires)
+            conn.close()
+            return resp, 200
+        conn.close()
+
+    return jsonify({'error': 'Not authenticated'}), 401
 
 @app.route('/api/version', methods=['GET'])
 def get_version():

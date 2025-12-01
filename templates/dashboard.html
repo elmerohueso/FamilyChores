@@ -20,7 +20,8 @@
                 <div></div>
                 <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
                     <a href="/settings" class="settings-link" id="settingsLink" title="Settings">⚙️</a>
-                    <button class="btn-logout" id="logoutBtn" onclick="logout()" title="Logout">Logout</button>
+                    <button class="btn-logout" id="tenantLogoutBtn" onclick="tenantLogout()" title="Tenant Logout" style="margin-right:8px;">Tenant Logout</button>
+                    <button class="btn-logout" id="logoutBtn" onclick="logout()" title="Logout">Select Role</button>
                 </div>
             </div>
         </header>
@@ -174,6 +175,11 @@
                 if (settingsLink) {
                     settingsLink.style.display = 'none';
                 }
+                // Hide tenant logout for kids
+                const tenantLogoutBtn = document.getElementById('tenantLogoutBtn');
+                if (tenantLogoutBtn) {
+                    tenantLogoutBtn.style.display = 'none';
+                }
                 
                 // Disable avatar uploads
                 document.querySelectorAll('.user-avatar, .avatar-placeholder').forEach(el => {
@@ -191,6 +197,11 @@
                 const settingsLink = document.getElementById('settingsLink');
                 if (settingsLink) {
                     settingsLink.style.display = '';
+                }
+                // Show tenant logout for parents
+                const tenantLogoutBtn = document.getElementById('tenantLogoutBtn');
+                if (tenantLogoutBtn) {
+                    tenantLogoutBtn.style.display = '';
                 }
                 
                 document.querySelectorAll('.user-avatar, .avatar-placeholder').forEach(el => {

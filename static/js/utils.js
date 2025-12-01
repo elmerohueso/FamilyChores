@@ -562,6 +562,33 @@ async function logout() {
 }
 
 /**
+ * Tenant logout: clears tenant session on server and redirects to the index/login page.
+ * Calls `/api/auth/logout` (server will clear refresh cookie) and then clears any
+ * client-side stored tenant tokens before redirecting to `/`.
+ */
+async function tenantLogout() {
+    try {
+        await fetch('/api/auth/logout', {
+            method: 'POST'
+        });
+    } catch (err) {
+        console.error('Error calling tenant logout endpoint:', err);
+    }
+
+    // Clear any locally stored tokens (non-HttpOnly tokens if present)
+    try {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('tenant_name');
+        localStorage.removeItem('userRole');
+        // Also clear legacy/login token used by the tenant UI
+        localStorage.removeItem('fc_token');
+    } catch (e) {}
+
+    // Redirect to the root (tenant/login) page
+    window.location.href = '/';
+}
+
+/**
  * Safely escape text for HTML insertion
  * @param {string} text - Raw text to escape
  * @returns {string} Escaped HTML string
