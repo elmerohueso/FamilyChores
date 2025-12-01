@@ -167,12 +167,16 @@ function getUserFilterFromUrl() {
  */
 async function getPermissions() {
     try {
-        const settings = await getSettings();
+        const resp = await fetch('/api/kid-permissions');
+        if (!resp.ok) {
+            throw new Error(`Failed to load kid permissions: ${resp.status}`);
+        }
+        const settings = await resp.json();
         const perms = {
-            record_chore: settings.kid_allowed_record_chore || false,
-            redeem_points: settings.kid_allowed_redeem_points || false,
-            withdraw_cash: settings.kid_allowed_withdraw_cash || false,
-            view_history: settings.kid_allowed_view_history || false
+            record_chore: !!settings.kid_allowed_record_chore,
+            redeem_points: !!settings.kid_allowed_redeem_points,
+            withdraw_cash: !!settings.kid_allowed_withdraw_cash,
+            view_history: !!settings.kid_allowed_view_history
         };
         return perms;
     } catch (error) {
@@ -211,12 +215,42 @@ async function getSettings() {
  */
 async function updateSettings(settingsData) {
     try {
+        // If settingsData contains kid permission keys, send them to the
+        // dedicated endpoint first (parent-only). Remove them from the
+        // payload sent to /api/settings to avoid duplication.
+        const permKeys = ['kid_allowed_record_chore', 'kid_allowed_redeem_points', 'kid_allowed_withdraw_cash', 'kid_allowed_view_history'];
+        const permPayload = {};
+        const settingsPayload = Object.assign({}, settingsData);
+
+        for (const k of permKeys) {
+            if (k in settingsPayload) {
+                permPayload[k] = settingsPayload[k];
+                delete settingsPayload[k];
+            }
+        }
+
+        // If there are permission changes, call the kid-permissions endpoint
+        if (Object.keys(permPayload).length > 0) {
+            const permResp = await fetch('/api/kid-permissions', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(permPayload)
+            });
+
+            if (!permResp.ok) {
+                // Return a Response-like error so callers can handle uniformly
+                const errText = await permResp.text().catch(() => 'Failed to update kid permissions');
+                return new Response(JSON.stringify({ error: errText }), { status: permResp.status || 500, headers: { 'Content-Type': 'application/json' } });
+            }
+        }
+
+        // Send remaining settings to the main settings endpoint
         const response = await fetch('/api/settings', {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(settingsData)
+            body: JSON.stringify(settingsPayload)
         });
         return response;
     } catch (error) {

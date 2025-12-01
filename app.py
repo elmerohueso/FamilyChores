@@ -212,14 +212,28 @@ def kid_permission_required(permission_key):
             
             # Kids need permission check
             if user_role == 'kid':
+                # Map legacy permission_key to roles table column
+                perm_map = {
+                    'kid_allowed_record_chore': 'can_record_chore',
+                    'kid_allowed_redeem_points': 'can_redeem_points',
+                    'kid_allowed_withdraw_cash': 'can_withdraw_cash',
+                    'kid_allowed_view_history': 'can_view_history'
+                }
+                col = perm_map.get(permission_key)
+                if not col:
+                    # Unknown permission key - deny access by default
+                    return redirect(url_for('index'))
+
                 conn = get_db_connection()
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', (permission_key,))
-                result = cursor.fetchone()
-                cursor.close()
-                conn.close()
-                
-                if result and result['setting_value'] == '1':
+                try:
+                    cursor.execute(f'SELECT {col} FROM roles WHERE role_name = %s', ('kid',))
+                    row = cursor.fetchone()
+                finally:
+                    cursor.close()
+                    conn.close()
+
+                if row and row.get(col):
                     return f(*args, **kwargs)
                 else:
                     # Permission not allowed - redirect to index
@@ -1344,6 +1358,14 @@ def get_settings():
     settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
     
     # Convert string values to appropriate types
+    # Fetch kid role permissions from roles table if available (roles table now authoritative)
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+    kid_role = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
     result = {
         'automatic_daily_cash_out': settings_dict.get('automatic_daily_cash_out', '1') == '1',
         'daily_cash_out_time': settings_dict.get('daily_cash_out_time', '00:00'),
@@ -1351,10 +1373,10 @@ def get_settings():
         'daily_cooldown_hours': int(settings_dict.get('daily_cooldown_hours', '12')),
         'weekly_cooldown_days': int(settings_dict.get('weekly_cooldown_days', '4')),
         'monthly_cooldown_days': int(settings_dict.get('monthly_cooldown_days', '14')),
-        'kid_allowed_record_chore': settings_dict.get('kid_allowed_record_chore', '0') == '1',
-        'kid_allowed_redeem_points': settings_dict.get('kid_allowed_redeem_points', '0') == '1',
-        'kid_allowed_withdraw_cash': settings_dict.get('kid_allowed_withdraw_cash', '0') == '1',
-        'kid_allowed_view_history': settings_dict.get('kid_allowed_view_history', '0') == '1',
+        'kid_allowed_record_chore': (kid_role and kid_role.get('can_record_chore')) if kid_role is not None else (settings_dict.get('kid_allowed_record_chore', '0') == '1'),
+        'kid_allowed_redeem_points': (kid_role and kid_role.get('can_redeem_points')) if kid_role is not None else (settings_dict.get('kid_allowed_redeem_points', '0') == '1'),
+        'kid_allowed_withdraw_cash': (kid_role and kid_role.get('can_withdraw_cash')) if kid_role is not None else (settings_dict.get('kid_allowed_withdraw_cash', '0') == '1'),
+        'kid_allowed_view_history': (kid_role and kid_role.get('can_view_history')) if kid_role is not None else (settings_dict.get('kid_allowed_view_history', '0') == '1'),
         'email_smtp_server': settings_dict.get('email_smtp_server', ''),
         'email_smtp_port': settings_dict.get('email_smtp_port', '587'),
         'email_username': settings_dict.get('email_username', ''),
@@ -1387,6 +1409,13 @@ def update_settings():
     
     # Switch to regular cursor for updates
     cursor = conn.cursor()
+    # Fetch current kid role permissions from roles table for comparison and updates
+    try:
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        current_role_perms = cursor.fetchone()
+        # cursor.fetchone() returns a tuple in this cursor type; convert to dict-like access using RealDictCursor earlier if needed
+    except Exception:
+        current_role_perms = None
     
     if 'automatic_daily_cash_out' in data:
         value = '1' if data['automatic_daily_cash_out'] else '0'
@@ -1508,48 +1537,60 @@ def update_settings():
     
     # Handle kid permission settings
     if 'kid_allowed_record_chore' in data:
-        value = '1' if data['kid_allowed_record_chore'] else '0'
-        old_value = current_settings.get('kid_allowed_record_chore', '0')
-        if value != old_value:
-            changed_settings['kid_allowed_record_chore'] = {'old': old_value == '1', 'new': data['kid_allowed_record_chore']}
+        new_bool = bool(data['kid_allowed_record_chore'])
+        old_bool = False
+        if current_role_perms:
+            try:
+                old_bool = bool(current_role_perms[0])
+            except Exception:
+                old_bool = False
+        if new_bool != old_bool:
+            changed_settings['kid_allowed_record_chore'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('kid_allowed_record_chore', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            UPDATE roles SET can_record_chore = %s WHERE role_name = 'kid'
+        ''', (new_bool,))
     
     if 'kid_allowed_redeem_points' in data:
-        value = '1' if data['kid_allowed_redeem_points'] else '0'
-        old_value = current_settings.get('kid_allowed_redeem_points', '0')
-        if value != old_value:
-            changed_settings['kid_allowed_redeem_points'] = {'old': old_value == '1', 'new': data['kid_allowed_redeem_points']}
+        new_bool = bool(data['kid_allowed_redeem_points'])
+        old_bool = False
+        if current_role_perms:
+            try:
+                old_bool = bool(current_role_perms[1])
+            except Exception:
+                old_bool = False
+        if new_bool != old_bool:
+            changed_settings['kid_allowed_redeem_points'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('kid_allowed_redeem_points', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            UPDATE roles SET can_redeem_points = %s WHERE role_name = 'kid'
+        ''', (new_bool,))
     
     if 'kid_allowed_withdraw_cash' in data:
-        value = '1' if data['kid_allowed_withdraw_cash'] else '0'
-        old_value = current_settings.get('kid_allowed_withdraw_cash', '0')
-        if value != old_value:
-            changed_settings['kid_allowed_withdraw_cash'] = {'old': old_value == '1', 'new': data['kid_allowed_withdraw_cash']}
+        new_bool = bool(data['kid_allowed_withdraw_cash'])
+        old_bool = False
+        if current_role_perms:
+            try:
+                old_bool = bool(current_role_perms[2])
+            except Exception:
+                old_bool = False
+        if new_bool != old_bool:
+            changed_settings['kid_allowed_withdraw_cash'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('kid_allowed_withdraw_cash', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            UPDATE roles SET can_withdraw_cash = %s WHERE role_name = 'kid'
+        ''', (new_bool,))
     
     if 'kid_allowed_view_history' in data:
-        value = '1' if data['kid_allowed_view_history'] else '0'
-        old_value = current_settings.get('kid_allowed_view_history', '0')
-        if value != old_value:
-            changed_settings['kid_allowed_view_history'] = {'old': old_value == '1', 'new': data['kid_allowed_view_history']}
+        new_bool = bool(data['kid_allowed_view_history'])
+        old_bool = False
+        if current_role_perms:
+            try:
+                old_bool = bool(current_role_perms[3])
+            except Exception:
+                old_bool = False
+        if new_bool != old_bool:
+            changed_settings['kid_allowed_view_history'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('kid_allowed_view_history', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            UPDATE roles SET can_view_history = %s WHERE role_name = 'kid'
+        ''', (new_bool,))
     
     # Handle email settings
     if 'email_smtp_server' in data:
@@ -1692,6 +1733,160 @@ def update_settings():
         pass  # Don't fail if logging fails
     
     return jsonify({'message': 'Settings updated successfully'}), 200
+
+
+# Kid permissions endpoints
+@app.route('/api/kid-permissions', methods=['GET'])
+def get_kid_permissions():
+    """Return kid role permissions.
+
+    Prefers values from the `roles` table if present, otherwise falls back
+    to legacy settings keys in the `settings` table.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if row:
+            return jsonify({
+                'kid_allowed_record_chore': bool(row.get('can_record_chore')),
+                'kid_allowed_redeem_points': bool(row.get('can_redeem_points')),
+                'kid_allowed_withdraw_cash': bool(row.get('can_withdraw_cash')),
+                'kid_allowed_view_history': bool(row.get('can_view_history')),
+            })
+
+        # Fallback to settings table if roles row not present
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s, %s, %s)', (
+            'kid_allowed_record_chore', 'kid_allowed_redeem_points', 'kid_allowed_withdraw_cash', 'kid_allowed_view_history'))
+        settings = {r['setting_key']: r['setting_value'] for r in cursor.fetchall()}
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'kid_allowed_record_chore': settings.get('kid_allowed_record_chore', '0') == '1',
+            'kid_allowed_redeem_points': settings.get('kid_allowed_redeem_points', '0') == '1',
+            'kid_allowed_withdraw_cash': settings.get('kid_allowed_withdraw_cash', '0') == '1',
+            'kid_allowed_view_history': settings.get('kid_allowed_view_history', '0') == '1',
+        })
+    except Exception as e:
+        error_msg = str(e)
+        try:
+            log_system_event('kid_permissions_error', f'Error fetching kid permissions: {error_msg}', {'error': error_msg}, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': f'Error fetching kid permissions: {error_msg}'}), 500
+
+
+def _coerce_bool(val):
+    """Coerce a variety of input types to boolean sensibly."""
+    if isinstance(val, bool):
+        return val
+    if val is None:
+        return False
+    if isinstance(val, (int, float)):
+        return bool(val)
+    s = str(val).strip().lower()
+    return s in ('1', 'true', 'yes', 'y', 'on')
+
+
+@app.route('/api/kid-permissions', methods=['PUT'])
+@parent_required
+def set_kid_permissions():
+    """Set kid role permissions (parent-only).
+
+    Accepts JSON with any of the following boolean keys:
+      - kid_allowed_record_chore
+      - kid_allowed_redeem_points
+      - kid_allowed_withdraw_cash
+      - kid_allowed_view_history
+
+    Performs an upsert into the `roles` table and logs changes.
+    """
+    data = request.get_json() or {}
+    allowed_keys = {
+        'kid_allowed_record_chore': 'can_record_chore',
+        'kid_allowed_redeem_points': 'can_redeem_points',
+        'kid_allowed_withdraw_cash': 'can_withdraw_cash',
+        'kid_allowed_view_history': 'can_view_history',
+    }
+
+    # Build column updates from provided keys
+    updates = {}
+    for k, col in allowed_keys.items():
+        if k in data:
+            updates[col] = _coerce_bool(data[k])
+
+    if not updates:
+        return jsonify({'message': 'No permission keys provided'}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        # Fetch current values to compute changes
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        current = cursor.fetchone()
+
+        # Prepare upsert: insert if not exists, otherwise update
+        # Use ON CONFLICT to update existing row (assumes role_name is unique/PK)
+        # Ensure all columns are provided for insert; use current or defaults if missing
+        insert_vals = {
+            'can_record_chore': updates.get('can_record_chore', current.get('can_record_chore') if current else False),
+            'can_redeem_points': updates.get('can_redeem_points', current.get('can_redeem_points') if current else False),
+            'can_withdraw_cash': updates.get('can_withdraw_cash', current.get('can_withdraw_cash') if current else False),
+            'can_view_history': updates.get('can_view_history', current.get('can_view_history') if current else False),
+        }
+
+        cursor.execute('''
+            INSERT INTO roles (role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (role_name) DO UPDATE SET
+                can_record_chore = EXCLUDED.can_record_chore,
+                can_redeem_points = EXCLUDED.can_redeem_points,
+                can_withdraw_cash = EXCLUDED.can_withdraw_cash,
+                can_view_history = EXCLUDED.can_view_history
+        ''', (
+            'kid', insert_vals['can_record_chore'], insert_vals['can_redeem_points'], insert_vals['can_withdraw_cash'], insert_vals['can_view_history']
+        ))
+
+        # Determine which settings changed for logging
+        changed = {}
+        for col, new_val in insert_vals.items():
+            old_val = None
+            if current:
+                old_val = bool(current.get(col))
+            else:
+                old_val = False
+            if bool(old_val) != bool(new_val):
+                # map back to external key name for readability
+                external_key = next((k for k, v in allowed_keys.items() if v == col), col)
+                changed[external_key] = {'old': old_val, 'new': bool(new_val)}
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        try:
+            if changed:
+                log_system_event('kid_permissions_updated', 'Kid permissions updated', changed, 'success')
+            else:
+                log_system_event('kid_permissions_updated', 'Kid permissions saved (no changes)', {}, 'success')
+        except Exception:
+            pass
+
+        return jsonify({'message': 'Kid permissions updated successfully', 'changed': changed}), 200
+    except Exception as e:
+        error_msg = str(e)
+        try:
+            log_system_event('kid_permissions_error', f'Error updating kid permissions: {error_msg}', {'error': error_msg}, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': f'Error updating kid permissions: {error_msg}'}), 500
 
 @app.route('/api/daily-cash-out', methods=['POST'])
 def manual_daily_cash_out():

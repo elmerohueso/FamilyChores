@@ -280,6 +280,51 @@ def init_database():
         VALUES ('kid_allowed_view_history', '0')
         ON CONFLICT (setting_key) DO NOTHING
     ''')
+    
+    # Migrate kid permission settings into roles table if present, then remove old keys
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'roles')
+               AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'settings') THEN
+                -- Only update if the 'kid' role exists
+                IF EXISTS (SELECT 1 FROM roles WHERE role_name = 'kid') THEN
+                    -- For each legacy setting, if present update corresponding roles column
+                    IF EXISTS (SELECT 1 FROM settings WHERE setting_key = 'kid_allowed_record_chore') THEN
+                        UPDATE roles
+                        SET can_record_chore = (SELECT setting_value = '1' FROM settings WHERE setting_key = 'kid_allowed_record_chore')
+                        WHERE role_name = 'kid';
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM settings WHERE setting_key = 'kid_allowed_redeem_points') THEN
+                        UPDATE roles
+                        SET can_redeem_points = (SELECT setting_value = '1' FROM settings WHERE setting_key = 'kid_allowed_redeem_points')
+                        WHERE role_name = 'kid';
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM settings WHERE setting_key = 'kid_allowed_withdraw_cash') THEN
+                        UPDATE roles
+                        SET can_withdraw_cash = (SELECT setting_value = '1' FROM settings WHERE setting_key = 'kid_allowed_withdraw_cash')
+                        WHERE role_name = 'kid';
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM settings WHERE setting_key = 'kid_allowed_view_history') THEN
+                        UPDATE roles
+                        SET can_view_history = (SELECT setting_value = '1' FROM settings WHERE setting_key = 'kid_allowed_view_history')
+                        WHERE role_name = 'kid';
+                    END IF;
+
+                    -- Remove legacy settings keys now that they're stored on roles
+                    DELETE FROM settings WHERE setting_key IN (
+                        'kid_allowed_record_chore',
+                        'kid_allowed_redeem_points',
+                        'kid_allowed_withdraw_cash',
+                        'kid_allowed_view_history'
+                    );
+                END IF;
+            END IF;
+        END $$;
+    ''')
     cursor.execute('''
         INSERT INTO settings (setting_key, setting_value) 
         VALUES ('email_notify_daily_digest', '0')

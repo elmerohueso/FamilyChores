@@ -358,10 +358,20 @@
                 document.getElementById('dailyCooldownHours').value = settings.daily_cooldown_hours || 12;
                 document.getElementById('weeklyCooldownDays').value = settings.weekly_cooldown_days || 4;
                 document.getElementById('monthlyCooldownDays').value = settings.monthly_cooldown_days || 14;
-                document.getElementById('kidAllowedRecordChore').checked = settings.kid_allowed_record_chore || false;
-                document.getElementById('kidAllowedRedeemPoints').checked = settings.kid_allowed_redeem_points || false;
-                document.getElementById('kidAllowedWithdrawCash').checked = settings.kid_allowed_withdraw_cash || false;
-                document.getElementById('kidAllowedViewHistory').checked = settings.kid_allowed_view_history || false;
+                // Fetch kid permissions from the dedicated endpoint (may come from roles table)
+                try {
+                    const perms = await getPermissions();
+                    document.getElementById('kidAllowedRecordChore').checked = perms.record_chore || false;
+                    document.getElementById('kidAllowedRedeemPoints').checked = perms.redeem_points || false;
+                    document.getElementById('kidAllowedWithdrawCash').checked = perms.withdraw_cash || false;
+                    document.getElementById('kidAllowedViewHistory').checked = perms.view_history || false;
+                } catch (e) {
+                    // Fall back to settings values if permissions fetch fails
+                    document.getElementById('kidAllowedRecordChore').checked = settings.kid_allowed_record_chore || false;
+                    document.getElementById('kidAllowedRedeemPoints').checked = settings.kid_allowed_redeem_points || false;
+                    document.getElementById('kidAllowedWithdrawCash').checked = settings.kid_allowed_withdraw_cash || false;
+                    document.getElementById('kidAllowedViewHistory').checked = settings.kid_allowed_view_history || false;
+                }
                 
                 // Email settings
                 document.getElementById('emailSmtpServer').value = settings.email_smtp_server || '';
