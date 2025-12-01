@@ -546,9 +546,11 @@ async function setServerRole(role) {
 }
 
 /**
- * Logout the current user (clears role and reloads page)
+ * roleLogout: clear the current session role and reload the page
+ * Clears role on server (best-effort), clears the client in-memory role,
+ * then reloads the page so the role selection overlay is shown.
  */
-async function logout() {
+async function roleLogout() {
     try {
         // Clear role on server (ignore response outcome for now)
         await setServerRole('');
@@ -557,8 +559,9 @@ async function logout() {
     }
     // Clear local stored role so page load shows selection overlay
     setLocalRole('');
-    // Reload the page to show role selection again
-    window.location.reload();
+    // Navigate to the requested dashboard path so the role selection UI is shown
+    // Use replace to avoid adding an extra history entry
+    window.location.replace('/dashboard');
 }
 
 /**
