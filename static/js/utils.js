@@ -3,44 +3,46 @@
  * Shared JavaScript utilities for URL management and user pre-selection
  */
 /**
- * Get current user role from localStorage
- * @returns {string|null} 'parent', 'kid', or null if not set
+ * In-memory current user role.
+ * We intentionally do NOT persist the role to localStorage for security
+ * and freshness — the server session is authoritative.
+ * Possible values: 'parent', 'kid', or null.
+ */
+// Initialize from server-injected role when available. The templates inject
+// `window.__serverRole` before this script is loaded so we can synchronously
+// pick it up here. Do not persist to localStorage — server session is
+// authoritative.
+let currentUserRole = (typeof window !== 'undefined' && window.__serverRole && (window.__serverRole === 'kid' || window.__serverRole === 'parent')) ? window.__serverRole : null;
+
+/**
+ * Get current user role (from memory).
+ * Synchronous so templates and inline scripts can call `getRole()`.
+ * @returns {string|null}
  */
 function getRole() {
-    return localStorage.getItem('userRole');
+    return currentUserRole;
 }
 
 /**
- * Set current user role in localStorage
- * @param {string} role - 'parent' or 'kid'
+ * Set current user role in memory only (do NOT persist to localStorage).
+ * @param {string|null} role - 'parent', 'kid', or null to clear
  */
 function setLocalRole(role) {
-    // Only store known valid roles in localStorage to avoid stale or spoofed values
     if (role === 'kid' || role === 'parent') {
-        localStorage.setItem('userRole', role);
-        // Optional timestamp to help detect stale entries
-        try {
-            localStorage.setItem('userRole_ts', Date.now().toString());
-        } catch (e) {
-            // Ignore storage errors (e.g., quota)
-        }
+        currentUserRole = role;
     } else {
-        // Remove any previously stored role if the provided value is invalid
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('userRole_ts');
+        currentUserRole = null;
     }
 }
 
 /**
  * Check server session role on page load and redirect if unauthorized.
- * - Stores role in localStorage when present
- * - If no role and user is not on the public index page (`/`), redirect to `/`
+ * Uses only the server response and updates the in-memory role.
  */
 async function checkRoleOnLoad() {
     try {
         const resp = await fetch('/api/get-role');
         if (!resp.ok) {
-            // If the request fails, don't block the page; just log and return
             console.warn('Failed to fetch role:', resp.status);
             return;
         }
@@ -48,17 +50,14 @@ async function checkRoleOnLoad() {
         const data = await resp.json();
         const role = data && data.role ? data.role : null;
 
-        // Only persist allowed roles coming from the server session
+        // Keep server-authoritative role in memory only
         if (role === 'kid' || role === 'parent') {
             setLocalRole(role);
             return;
         }
 
-        // Clear any stored role when server reports no valid role
+        // Server reports no role — clear in-memory role and redirect off protected pages
         setLocalRole(null);
-
-        // No role on server session. Redirect to index if we're on a protected page.
-        // Allow the public landing page at `/` to load without a role.
         const pathname = window.location.pathname || '/';
         if (pathname !== '/') {
             window.location.replace('/');
@@ -71,7 +70,6 @@ async function checkRoleOnLoad() {
 // Run role check after DOM is ready
 if (document && document.addEventListener) {
     document.addEventListener('DOMContentLoaded', () => {
-        // Fire-and-forget
         checkRoleOnLoad();
     });
 }
