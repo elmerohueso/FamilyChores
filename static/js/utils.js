@@ -114,14 +114,7 @@ function getUrlParameter(name) {
     return urlParams.get(name);
 }
 
-/**
- * Clean URL by replacing current state with base URL
- * This removes query parameters from the address bar while preserving page state
- */
-function cleanUrl() {
-    const baseUrl = '/';
-    window.history.replaceState({}, '', baseUrl);
-}
+
 
 /**
  * Pre-select user in dropdown and trigger change event
@@ -139,8 +132,7 @@ function preSelectUserFromUrl(selectId) {
             const changeEvent = new Event('change');
             userSelect.dispatchEvent(changeEvent);
         }
-        // Clean URL after pre-selecting
-        cleanUrl();
+        
         return userIdParam;
     }
     return null;

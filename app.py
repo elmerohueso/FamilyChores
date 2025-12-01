@@ -250,7 +250,7 @@ def parent_required(f):
         user_role = session.get('user_role')
         if user_role != 'parent':
             # Redirect to index if not parent
-            return redirect(url_for('index'))
+            return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -261,7 +261,7 @@ def kid_or_parent_required(f):
         user_role = session.get('user_role')
         if user_role not in ['kid', 'parent']:
             # Redirect to index if no role set
-            return redirect(url_for('index'))
+            return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -290,7 +290,7 @@ def kid_permission_required(permission_key):
                 col = perm_map.get(permission_key)
                 if not col:
                     # Unknown permission key - deny access by default
-                    return redirect(url_for('index'))
+                    return redirect(url_for('dashboard'))
 
                 conn = get_db_connection()
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -305,10 +305,10 @@ def kid_permission_required(permission_key):
                     return f(*args, **kwargs)
                 else:
                     # Permission not allowed - redirect to index
-                    return redirect(url_for('index'))
+                    return redirect(url_for('dashboard'))
             
             # No role set - redirect to index
-            return redirect(url_for('index'))
+            return redirect(url_for('dashboard'))
         return decorated_function
     return decorator
 
@@ -317,6 +317,8 @@ def kid_permission_required(permission_key):
 @app.route('/')
 def index():
     """Home page."""
+    # Show the public landing / login page at the root so tenants
+    # who are not logged in (no token) are directed to `index.html`.
     return render_template('index.html')
 
 

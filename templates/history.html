@@ -331,10 +331,6 @@
             try {
                 // Check for user_id filter in URL
                 filterUserId = getUserFilterFromUrl();
-                // Clean URL after capturing filter
-                if (filterUserId) {
-                    cleanUrl();
-                }
 
                 allTransactions = await getTransactions();
 

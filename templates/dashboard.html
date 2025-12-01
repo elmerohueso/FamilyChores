@@ -215,8 +215,7 @@
 
         // Show role selection on page load if not already selected
         window.addEventListener('DOMContentLoaded', async () => {
-            // Clean URL to show base path only
-            cleanUrl();
+            
             
             // Load kid permissions first
             permissions = await getPermissions();
