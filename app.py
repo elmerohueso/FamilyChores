@@ -16,6 +16,13 @@ from email.utils import formataddr
 from cryptography.fernet import Fernet
 import base64
 import logging
+import jwt
+import secrets
+import hashlib
+from argon2 import PasswordHasher, exceptions as argon2_exceptions
+
+# Argon2 hasher instance (raise if argon2-cffi missing so failures are visible)
+ph = PasswordHasher()
 
 # Configure logging
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
@@ -103,6 +110,66 @@ def get_db_connection():
     """Get a database connection with dictionary cursor."""
     conn = psycopg2.connect(DATABASE_URL)
     return conn
+
+
+# --- JWT / Refresh token helpers ---
+JWT_ALGORITHM = 'HS256'
+# Access token lifetime in seconds (short-lived)
+ACCESS_TOKEN_EXPIRES = int(os.environ.get('ACCESS_TOKEN_EXPIRES', 900))  # 15 minutes default
+# Refresh token lifetime in seconds (long-lived)
+REFRESH_TOKEN_EXPIRES = int(os.environ.get('REFRESH_TOKEN_EXPIRES', 60 * 60 * 24 * 30))  # 30 days
+
+def create_access_token(tenant_id: str):
+    now = datetime.utcnow()
+    payload = {
+        'sub': str(tenant_id),
+        'iat': now,
+        'exp': now + timedelta(seconds=ACCESS_TOKEN_EXPIRES)
+    }
+    token = jwt.encode(payload, app.secret_key, algorithm=JWT_ALGORITHM)
+    return token
+
+def create_refresh_token_record(conn, tenant_id, user_agent=None, ip_address=None):
+    # Create a cryptographically random token, store its sha256 hash in DB
+    token = secrets.token_urlsafe(64)
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    issued_at = datetime.utcnow()
+    expires_at = issued_at + timedelta(seconds=REFRESH_TOKEN_EXPIRES)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO refresh_tokens (tenant_id, token_hash, issued_at, expires_at, user_agent, ip_address) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        (tenant_id, token_hash, issued_at, expires_at, user_agent, ip_address)
+    )
+    conn.commit()
+    cur.close()
+    return token, expires_at
+
+# Argon2 password hasher instance
+try:
+    ph = PasswordHasher()
+except Exception:
+    ph = None
+
+def revoke_refresh_token(conn, token):
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    cur = conn.cursor()
+    cur.execute('UPDATE refresh_tokens SET revoked = TRUE WHERE token_hash = %s', (token_hash,))
+    conn.commit()
+    cur.close()
+
+def validate_refresh_token(conn, token):
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    cur = conn.cursor()
+    cur.execute('SELECT id, tenant_id, issued_at, expires_at, revoked FROM refresh_tokens WHERE token_hash = %s', (token_hash,))
+    row = cur.fetchone()
+    cur.close()
+    if not row:
+        return None
+    id_, tenant_id, issued_at, expires_at, revoked = row
+    now = datetime.utcnow()
+    if revoked or expires_at < now:
+        return None
+    return {'id': id_, 'tenant_id': tenant_id}
 
 def log_system_event(log_type, message, details=None, status='success'):
     """Log a system event using the logging module.
@@ -317,6 +384,115 @@ def get_role():
     """Get current user role."""
     user_role = session.get('user_role')
     return jsonify({'role': user_role}), 200
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_auth_login():
+    data = request.get_json(force=True)
+    tenant_name = data.get('tenant_name')
+    password = data.get('password')
+    if not tenant_name or not password:
+        return jsonify({'error': 'Missing tenant_name or password'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Fetch stored password hash for tenant and verify using Argon2 only.
+    cur.execute("SELECT tenant_id, tenant_password FROM tenants WHERE tenant_name = %s", (tenant_name,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    tenant_id, stored = row[0], row[1]
+
+    # Only accept Argon2-formatted hashes (argon2-cffi). Reject other formats.
+    if not (isinstance(stored, str) and stored.startswith('$argon2')):
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    try:
+        ph.verify(stored, password)
+        # Rehash transparently if parameters changed
+        try:
+            if ph.check_needs_rehash(stored):
+                new_hash = ph.hash(password)
+                cur.execute('UPDATE tenants SET tenant_password = %s WHERE tenant_id = %s', (new_hash, tenant_id))
+                conn.commit()
+        except Exception:
+            pass
+    except argon2_exceptions.VerifyMismatchError:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    # Successful authentication - issue tokens
+    access_token = create_access_token(tenant_id)
+    refresh_token, refresh_expires = create_refresh_token_record(conn, tenant_id, request.headers.get('User-Agent'), request.remote_addr)
+
+    # Set refresh token as HttpOnly cookie (note: Secure cookie requires HTTPS in browsers)
+    resp = jsonify({'access_token': access_token, 'expires_in': ACCESS_TOKEN_EXPIRES})
+    resp.set_cookie('refresh_token', refresh_token, httponly=True, secure=False, samesite='Strict', expires=refresh_expires)
+
+    try:
+        log_system_event('login', 'Tenant login success', {'tenant_id': tenant_id}, 'success')
+    except Exception:
+        pass
+
+    cur.close()
+    conn.close()
+    return resp, 200
+
+
+@app.route('/api/auth/refresh', methods=['POST'])
+def api_auth_refresh():
+    # Read refresh token from cookie or JSON body
+    token = request.cookies.get('refresh_token') or (request.get_json(silent=True) or {}).get('refresh_token')
+    if not token:
+        return jsonify({'error': 'Missing refresh token'}), 400
+
+    conn = get_db_connection()
+    valid = validate_refresh_token(conn, token)
+    if not valid:
+        conn.close()
+        return jsonify({'error': 'Invalid or expired refresh token'}), 401
+
+    tenant_id = valid['tenant_id']
+
+    # Rotate refresh token: revoke current and issue a new one
+    revoke_refresh_token(conn, token)
+    new_token, new_expires = create_refresh_token_record(conn, tenant_id, request.headers.get('User-Agent'), request.remote_addr)
+
+    access_token = create_access_token(tenant_id)
+    resp = jsonify({'access_token': access_token, 'expires_in': ACCESS_TOKEN_EXPIRES})
+    resp.set_cookie('refresh_token', new_token, httponly=True, secure=False, samesite='Strict', expires=new_expires)
+
+    conn.close()
+    return resp, 200
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_auth_logout():
+    token = request.cookies.get('refresh_token') or (request.get_json(silent=True) or {}).get('refresh_token')
+    if token:
+        conn = get_db_connection()
+        revoke_refresh_token(conn, token)
+        conn.close()
+
+    resp = jsonify({'success': True})
+    # Clear cookie
+    resp.set_cookie('refresh_token', '', expires=0)
+    try:
+        log_system_event('logout', 'Tenant logged out', None, 'success')
+    except Exception:
+        pass
+    return resp, 200
 
 @app.route('/api/version', methods=['GET'])
 def get_version():
