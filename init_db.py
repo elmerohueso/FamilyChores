@@ -31,9 +31,23 @@ def init_database():
         )
     ''')
     
-    # Create user table
+    # If an old "user" table exists, rename it to family_members for clarity
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS "user" (
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables WHERE table_name = 'user'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM information_schema.tables WHERE table_name = 'family_members'
+            ) THEN
+                ALTER TABLE "user" RENAME TO family_members;
+            END IF;
+        END $$;
+    ''')
+
+    # Create family_members table (new name for users)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS family_members (
             user_id SERIAL PRIMARY KEY,
             full_name VARCHAR(255) NOT NULL,
             balance INTEGER DEFAULT 0,
@@ -47,9 +61,9 @@ def init_database():
         BEGIN
             IF NOT EXISTS (
                 SELECT 1 FROM information_schema.columns 
-                WHERE table_name = 'user' AND column_name = 'avatar_path'
+                WHERE table_name = 'family_members' AND column_name = 'avatar_path'
             ) THEN
-                ALTER TABLE "user" ADD COLUMN avatar_path VARCHAR(500);
+                ALTER TABLE family_members ADD COLUMN avatar_path VARCHAR(500);
             END IF;
         END $$;
     ''')
@@ -97,7 +111,7 @@ def init_database():
             value INTEGER NOT NULL,
             transaction_type VARCHAR(50),
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES "user"(user_id)
+            FOREIGN KEY (user_id) REFERENCES family_members(user_id)
         )
     ''')
     
@@ -171,10 +185,42 @@ def init_database():
         CREATE TABLE IF NOT EXISTS cash_balances (
             user_id INTEGER PRIMARY KEY,
             cash_balance DOUBLE PRECISION DEFAULT 0.0,
-            FOREIGN KEY (user_id) REFERENCES "user"(user_id)
+            FOREIGN KEY (user_id) REFERENCES family_members(user_id)
         )
     ''')
     
+    # Create roles table and seed defaults only if the table does not already exist
+    cursor.execute('''
+        DO $$
+        BEGIN
+            -- Ensure pgcrypto extension for gen_random_uuid()
+            IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pgcrypto') THEN
+                CREATE EXTENSION pgcrypto;
+            END IF;
+
+            -- Create table and seed defaults only when table is not present
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.tables WHERE table_name = 'roles'
+            ) THEN
+                CREATE TABLE roles (
+                    role_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    role_name VARCHAR(100) NOT NULL UNIQUE,
+                    can_record_chore BOOLEAN DEFAULT FALSE,
+                    can_redeem_points BOOLEAN DEFAULT FALSE,
+                    can_withdraw_cash BOOLEAN DEFAULT FALSE,
+                    can_view_history BOOLEAN DEFAULT FALSE,
+                    is_parent BOOLEAN DEFAULT FALSE
+                );
+
+                -- Seed default roles
+                INSERT INTO roles (role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history, is_parent)
+                VALUES
+                    ('parent', TRUE, TRUE, TRUE, TRUE, TRUE),
+                    ('kid', FALSE, FALSE, FALSE, FALSE, FALSE);
+            END IF;
+        END
+        $$;
+    ''')
     # Create settings table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
@@ -234,6 +280,51 @@ def init_database():
         VALUES ('kid_allowed_view_history', '0')
         ON CONFLICT (setting_key) DO NOTHING
     ''')
+    
+    # Migrate kid permission settings into roles table if present, then remove old keys
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'roles')
+               AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'settings') THEN
+                -- Only update if the 'kid' role exists
+                IF EXISTS (SELECT 1 FROM roles WHERE role_name = 'kid') THEN
+                    -- For each legacy setting, if present update corresponding roles column
+                    IF EXISTS (SELECT 1 FROM settings WHERE setting_key = 'kid_allowed_record_chore') THEN
+                        UPDATE roles
+                        SET can_record_chore = (SELECT setting_value = '1' FROM settings WHERE setting_key = 'kid_allowed_record_chore')
+                        WHERE role_name = 'kid';
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM settings WHERE setting_key = 'kid_allowed_redeem_points') THEN
+                        UPDATE roles
+                        SET can_redeem_points = (SELECT setting_value = '1' FROM settings WHERE setting_key = 'kid_allowed_redeem_points')
+                        WHERE role_name = 'kid';
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM settings WHERE setting_key = 'kid_allowed_withdraw_cash') THEN
+                        UPDATE roles
+                        SET can_withdraw_cash = (SELECT setting_value = '1' FROM settings WHERE setting_key = 'kid_allowed_withdraw_cash')
+                        WHERE role_name = 'kid';
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM settings WHERE setting_key = 'kid_allowed_view_history') THEN
+                        UPDATE roles
+                        SET can_view_history = (SELECT setting_value = '1' FROM settings WHERE setting_key = 'kid_allowed_view_history')
+                        WHERE role_name = 'kid';
+                    END IF;
+
+                    -- Remove legacy settings keys now that they're stored on roles
+                    DELETE FROM settings WHERE setting_key IN (
+                        'kid_allowed_record_chore',
+                        'kid_allowed_redeem_points',
+                        'kid_allowed_withdraw_cash',
+                        'kid_allowed_view_history'
+                    );
+                END IF;
+            END IF;
+        END $$;
+    ''')
     cursor.execute('''
         INSERT INTO settings (setting_key, setting_value) 
         VALUES ('email_notify_daily_digest', '0')
@@ -290,7 +381,7 @@ def init_database():
     conn.close()
     
     print(f"Database initialized successfully!")
-    print("Tables created: chores, user, transactions, cash_balances, settings")
+    print("Tables created: chores, family_members, transactions, cash_balances, settings")
 
 if __name__ == '__main__':
     init_database()

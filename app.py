@@ -212,14 +212,28 @@ def kid_permission_required(permission_key):
             
             # Kids need permission check
             if user_role == 'kid':
+                # Map legacy permission_key to roles table column
+                perm_map = {
+                    'kid_allowed_record_chore': 'can_record_chore',
+                    'kid_allowed_redeem_points': 'can_redeem_points',
+                    'kid_allowed_withdraw_cash': 'can_withdraw_cash',
+                    'kid_allowed_view_history': 'can_view_history'
+                }
+                col = perm_map.get(permission_key)
+                if not col:
+                    # Unknown permission key - deny access by default
+                    return redirect(url_for('index'))
+
                 conn = get_db_connection()
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', (permission_key,))
-                result = cursor.fetchone()
-                cursor.close()
-                conn.close()
-                
-                if result and result['setting_value'] == '1':
+                try:
+                    cursor.execute(f'SELECT {col} FROM roles WHERE role_name = %s', ('kid',))
+                    row = cursor.fetchone()
+                finally:
+                    cursor.close()
+                    conn.close()
+
+                if row and row.get(col):
                     return f(*args, **kwargs)
                 else:
                     # Permission not allowed - redirect to index
@@ -384,6 +398,7 @@ def get_chores():
     return jsonify([dict(chore) for chore in chores])
 
 @app.route('/api/chores/<int:chore_id>', methods=['DELETE'])
+@parent_required
 def delete_chore(chore_id):
     """Delete a chore without affecting existing transactions."""
     conn = get_db_connection()
@@ -437,6 +452,7 @@ def delete_chore(chore_id):
         return jsonify({'error': f'Error deleting chore: {error_msg}'}), 500
 
 @app.route('/api/chores/<int:chore_id>', methods=['PUT'])
+@parent_required
 def update_chore(chore_id):
     """Update an existing chore."""
     data = request.get_json()
@@ -584,6 +600,7 @@ def update_chore(chore_id):
         return jsonify({'error': f'Error updating chore: {error_msg}'}), 500
 
 @app.route('/api/chores', methods=['POST'])
+@parent_required
 def create_chore():
     """Create a new chore."""
     # Handle both JSON and form data
@@ -662,6 +679,7 @@ def create_chore():
         return jsonify({'error': f'Error creating chore: {error_msg}'}), 500
 
 @app.route('/api/chores/import', methods=['POST'])
+@parent_required
 def import_chores():
     """Import multiple chores from CSV data."""
     data = request.get_json()
@@ -761,7 +779,7 @@ def get_users():
             u.balance,
             u.avatar_path,
             COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM "user" u
+        FROM family_members u
         LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
         ORDER BY u.user_id
     ''')
@@ -793,7 +811,7 @@ def upload_avatar(user_id):
     # Verify user exists
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT user_id FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT user_id FROM family_members WHERE user_id = %s', (user_id,))
     user = cursor.fetchone()
     if not user:
         cursor.close()
@@ -809,7 +827,7 @@ def upload_avatar(user_id):
     file.save(filepath)
     
     # Delete old avatar if exists
-    cursor.execute('SELECT avatar_path FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT avatar_path FROM family_members WHERE user_id = %s', (user_id,))
     old_avatar = cursor.fetchone()
     if old_avatar and old_avatar.get('avatar_path'):
         old_path = os.path.join(AVATAR_DIR, os.path.basename(old_avatar['avatar_path']))
@@ -820,13 +838,13 @@ def upload_avatar(user_id):
                 pass  # Ignore errors deleting old file
     
     # Get user name for logging
-    cursor.execute('SELECT full_name FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (user_id,))
     user_result = cursor.fetchone()
     user_name = user_result.get('full_name') if user_result else f'User {user_id}'
     
     # Update database
     relative_path = os.path.join('avatars', filename)
-    cursor.execute('UPDATE "user" SET avatar_path = %s WHERE user_id = %s', (relative_path, user_id))
+    cursor.execute('UPDATE family_members SET avatar_path = %s WHERE user_id = %s', (relative_path, user_id))
     conn.commit()
     cursor.close()
     conn.close()
@@ -849,6 +867,7 @@ def serve_avatar(filename):
     return send_from_directory(AVATAR_DIR, filename)
 
 @app.route('/api/users', methods=['POST'])
+@parent_required
 def create_user():
     """Create a new user."""
     # Handle both JSON and form data
@@ -870,7 +889,7 @@ def create_user():
     
     try:
         cursor.execute(
-            'INSERT INTO "user" (full_name, balance) VALUES (%s, %s) RETURNING user_id',
+            'INSERT INTO family_members (full_name, balance) VALUES (%s, %s) RETURNING user_id',
             (data['full_name'], data.get('balance', 0))
         )
         user_id = cursor.fetchone()[0]
@@ -909,7 +928,7 @@ def delete_user(user_id):
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     # Check if user exists and get user name for logging
-    cursor.execute('SELECT full_name, avatar_path FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT full_name, avatar_path FROM family_members WHERE user_id = %s', (user_id,))
     user = cursor.fetchone()
     if not user:
         cursor.close()
@@ -948,7 +967,7 @@ def delete_user(user_id):
     cursor.execute('DELETE FROM cash_balances WHERE user_id = %s', (user_id,))
     
     # Delete user
-    cursor.execute('DELETE FROM "user" WHERE user_id = %s', (user_id,))
+    cursor.execute('DELETE FROM family_members WHERE user_id = %s', (user_id,))
     
     conn.commit()
     cursor.close()
@@ -980,7 +999,7 @@ def get_transactions():
             t.timestamp,
             u.full_name as user_name
         FROM transactions t
-        LEFT JOIN "user" u ON t.user_id = u.user_id
+        LEFT JOIN family_members u ON t.user_id = u.user_id
         ORDER BY t.timestamp DESC
     ''')
     transactions = cursor.fetchall()
@@ -1045,7 +1064,7 @@ def send_notification_email(notification_type, user_name, description, value=Non
     point_balance = None
     cash_balance = None
     if user_id:
-        cursor.execute('SELECT balance FROM "user" WHERE user_id = %s', (user_id,))
+        cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (user_id,))
         user_result = cursor.fetchone()
         if user_result:
             point_balance = user_result.get('balance') or 0
@@ -1168,161 +1187,7 @@ Amount: ${abs(value) if value else 'N/A'}
     except Exception:
         pass  # Silently ignore email errors
 
-@app.route('/api/transactions', methods=['POST'])
-def create_transaction():
-    """Create a new transaction."""
-    data = request.get_json()
-    
-    # Validate required fields
-    if not data.get('user_id'):
-        return jsonify({'error': 'user_id is required'}), 400
-    if 'value' not in data:
-        return jsonify({'error': 'value is required'}), 400
-    
-    try:
-        value = int(data['value'])
-    except (ValueError, TypeError):
-        return jsonify({'error': 'value must be a number'}), 400
-    
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Check user balance for redemptions (negative values)
-    if value < 0:
-        cursor.execute('SELECT balance FROM "user" WHERE user_id = %s', (data['user_id'],))
-        user = cursor.fetchone()
-        if not user:
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'User not found'}), 404
-        
-        current_balance = user.get('balance') or 0
-        if current_balance + value < 0:
-            cursor.close()
-            conn.close()
-            return jsonify({'error': f'Insufficient points. User has {current_balance} points.'}), 400
-    
-    # Determine transaction type and get description
-    transaction_type = None
-    description = None
-    redemption_type = data.get('redemption_type')
-    
-    if data.get('chore_id'):
-        transaction_type = 'chore_completed'
-        # Get chore name and point value from chores table
-        cursor.execute('SELECT chore, point_value FROM chores WHERE chore_id = %s', (data['chore_id'],))
-        chore_result = cursor.fetchone()
-        if chore_result:
-            description = chore_result['chore']
-            chore_point_value = chore_result['point_value']
-            
-            # If user is a kid, validate that point value matches chore's point value
-            user_role = session.get('user_role')
-            if user_role == 'kid' and value != chore_point_value:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'Kids cannot modify point values. Point value must match the chore\'s default value.'}), 403
-        
-        # Update last_completed timestamp for the chore (in local system time)
-        completion_timestamp = data.get('timestamp') or get_system_timestamp()
-        cursor.execute('''
-            UPDATE chores 
-            SET last_completed = %s 
-            WHERE chore_id = %s
-        ''', (completion_timestamp, data['chore_id']))
-    elif data.get('chore_name'):
-        transaction_type = 'chore_completed'
-        description = data['chore_name']
-    elif data.get('description') and not redemption_type:
-        # Only use provided description if not a redemption (redemptions should generate their own)
-        transaction_type = 'chore_completed'
-        description = data['description']
-    elif redemption_type:
-        transaction_type = 'points_redemption'
-        # Generate description for point redemption
-        points_redeemed = abs(value)
-        if redemption_type == 'money':
-            dollars = points_redeemed / 5.0
-            description = f'Redeemed {points_redeemed} points for ${dollars:.2f}'
-        elif redemption_type == 'media':
-            minutes = (points_redeemed / 5) * 30
-            description = f'Redeemed {points_redeemed} points for {int(minutes)} minutes of media/device time'
-        else:
-            description = f'Redeemed {points_redeemed} points'
-    elif data.get('cash_withdrawal'):
-        transaction_type = 'cash_withdrawal'
-    elif value < 0:
-        # Default for negative values without explicit type or redemption_type
-        transaction_type = 'points_redemption'
-        points_redeemed = abs(value)
-        description = f'Redeemed {points_redeemed} points'
-    
-    # Insert transaction
-    # Store timestamp in system timezone (local time)
-    timestamp = data.get('timestamp') or get_system_timestamp()
-    
-    cursor.execute(
-        'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
-        (data['user_id'], description, value, transaction_type, timestamp)
-    )
-    result = cursor.fetchone()
-    transaction_id = result['transaction_id'] if result else None
-    
-    # Update user balance
-    cursor.execute(
-        'UPDATE "user" SET balance = balance + %s WHERE user_id = %s',
-        (value, data['user_id'])
-    )
-    
-    # If redeeming for money (negative value and redemption_type is 'money'), update cash_balance
-    if value < 0 and redemption_type == 'money':
-        # Calculate cash amount: every 5 points = $1
-        cash_amount = abs(value) / 5.0
-        
-        # Ensure cash_balance record exists
-        cursor.execute('''
-            INSERT INTO cash_balances (user_id, cash_balance) 
-            VALUES (%s, 0.0)
-            ON CONFLICT (user_id) DO NOTHING
-        ''', (data['user_id'],))
-        
-        # Update cash_balance
-        cursor.execute('''
-            UPDATE cash_balances 
-            SET cash_balance = cash_balance + %s 
-            WHERE user_id = %s
-        ''', (cash_amount, data['user_id']))
-    
-    # Get user name for email notification
-    cursor.execute('SELECT full_name FROM "user" WHERE user_id = %s', (data['user_id'],))
-    user_result = cursor.fetchone()
-    user_name = user_result.get('full_name') if user_result else 'Unknown User'
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
-    
-    # Log transaction creation (for important transaction types)
-    try:
-        if transaction_type == 'chore_completed':
-            log_system_event('transaction_created', f'{user_name} completed: {description}', 
-                            {'user_id': data['user_id'], 'user_name': user_name, 'transaction_type': transaction_type,
-                             'description': description, 'value': value, 'transaction_id': transaction_id}, 'success')
-        elif transaction_type == 'points_redemption':
-            log_system_event('transaction_created', f'{user_name} redeemed points: {description}', 
-                            {'user_id': data['user_id'], 'user_name': user_name, 'transaction_type': transaction_type,
-                             'description': description, 'points_redeemed': abs(value), 'transaction_id': transaction_id}, 'success')
-        # Note: cash_withdrawal is logged in withdraw_cash() function
-    except Exception:
-        pass  # Don't fail if logging fails
-    
-    # Send email notifications if enabled
-    if transaction_type == 'chore_completed':
-        send_notification_email('chore_completed', user_name, description, value, data['user_id'])
-    elif transaction_type == 'points_redemption':
-        send_notification_email('points_redeemed', user_name, description, value, data['user_id'])
-    
-    return jsonify({'transaction_id': transaction_id, 'message': 'Transaction created successfully'}), 201
+
 
 # Settings endpoints
 @app.route('/settings')
@@ -1344,6 +1209,14 @@ def get_settings():
     settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
     
     # Convert string values to appropriate types
+    # Fetch kid role permissions from roles table if available (roles table now authoritative)
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+    kid_role = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
     result = {
         'automatic_daily_cash_out': settings_dict.get('automatic_daily_cash_out', '1') == '1',
         'daily_cash_out_time': settings_dict.get('daily_cash_out_time', '00:00'),
@@ -1351,10 +1224,10 @@ def get_settings():
         'daily_cooldown_hours': int(settings_dict.get('daily_cooldown_hours', '12')),
         'weekly_cooldown_days': int(settings_dict.get('weekly_cooldown_days', '4')),
         'monthly_cooldown_days': int(settings_dict.get('monthly_cooldown_days', '14')),
-        'kid_allowed_record_chore': settings_dict.get('kid_allowed_record_chore', '0') == '1',
-        'kid_allowed_redeem_points': settings_dict.get('kid_allowed_redeem_points', '0') == '1',
-        'kid_allowed_withdraw_cash': settings_dict.get('kid_allowed_withdraw_cash', '0') == '1',
-        'kid_allowed_view_history': settings_dict.get('kid_allowed_view_history', '0') == '1',
+        'kid_allowed_record_chore': (kid_role and kid_role.get('can_record_chore')) if kid_role is not None else (settings_dict.get('kid_allowed_record_chore', '0') == '1'),
+        'kid_allowed_redeem_points': (kid_role and kid_role.get('can_redeem_points')) if kid_role is not None else (settings_dict.get('kid_allowed_redeem_points', '0') == '1'),
+        'kid_allowed_withdraw_cash': (kid_role and kid_role.get('can_withdraw_cash')) if kid_role is not None else (settings_dict.get('kid_allowed_withdraw_cash', '0') == '1'),
+        'kid_allowed_view_history': (kid_role and kid_role.get('can_view_history')) if kid_role is not None else (settings_dict.get('kid_allowed_view_history', '0') == '1'),
         'email_smtp_server': settings_dict.get('email_smtp_server', ''),
         'email_smtp_port': settings_dict.get('email_smtp_port', '587'),
         'email_username': settings_dict.get('email_username', ''),
@@ -1370,6 +1243,7 @@ def get_settings():
     return jsonify(result)
 
 @app.route('/api/settings', methods=['PUT'])
+@parent_required
 def update_settings():
     """Update settings."""
     data = request.get_json()
@@ -1387,6 +1261,13 @@ def update_settings():
     
     # Switch to regular cursor for updates
     cursor = conn.cursor()
+    # Fetch current kid role permissions from roles table for comparison and updates
+    try:
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        current_role_perms = cursor.fetchone()
+        # cursor.fetchone() returns a tuple in this cursor type; convert to dict-like access using RealDictCursor earlier if needed
+    except Exception:
+        current_role_perms = None
     
     if 'automatic_daily_cash_out' in data:
         value = '1' if data['automatic_daily_cash_out'] else '0'
@@ -1508,48 +1389,60 @@ def update_settings():
     
     # Handle kid permission settings
     if 'kid_allowed_record_chore' in data:
-        value = '1' if data['kid_allowed_record_chore'] else '0'
-        old_value = current_settings.get('kid_allowed_record_chore', '0')
-        if value != old_value:
-            changed_settings['kid_allowed_record_chore'] = {'old': old_value == '1', 'new': data['kid_allowed_record_chore']}
+        new_bool = bool(data['kid_allowed_record_chore'])
+        old_bool = False
+        if current_role_perms:
+            try:
+                old_bool = bool(current_role_perms[0])
+            except Exception:
+                old_bool = False
+        if new_bool != old_bool:
+            changed_settings['kid_allowed_record_chore'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('kid_allowed_record_chore', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            UPDATE roles SET can_record_chore = %s WHERE role_name = 'kid'
+        ''', (new_bool,))
     
     if 'kid_allowed_redeem_points' in data:
-        value = '1' if data['kid_allowed_redeem_points'] else '0'
-        old_value = current_settings.get('kid_allowed_redeem_points', '0')
-        if value != old_value:
-            changed_settings['kid_allowed_redeem_points'] = {'old': old_value == '1', 'new': data['kid_allowed_redeem_points']}
+        new_bool = bool(data['kid_allowed_redeem_points'])
+        old_bool = False
+        if current_role_perms:
+            try:
+                old_bool = bool(current_role_perms[1])
+            except Exception:
+                old_bool = False
+        if new_bool != old_bool:
+            changed_settings['kid_allowed_redeem_points'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('kid_allowed_redeem_points', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            UPDATE roles SET can_redeem_points = %s WHERE role_name = 'kid'
+        ''', (new_bool,))
     
     if 'kid_allowed_withdraw_cash' in data:
-        value = '1' if data['kid_allowed_withdraw_cash'] else '0'
-        old_value = current_settings.get('kid_allowed_withdraw_cash', '0')
-        if value != old_value:
-            changed_settings['kid_allowed_withdraw_cash'] = {'old': old_value == '1', 'new': data['kid_allowed_withdraw_cash']}
+        new_bool = bool(data['kid_allowed_withdraw_cash'])
+        old_bool = False
+        if current_role_perms:
+            try:
+                old_bool = bool(current_role_perms[2])
+            except Exception:
+                old_bool = False
+        if new_bool != old_bool:
+            changed_settings['kid_allowed_withdraw_cash'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('kid_allowed_withdraw_cash', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            UPDATE roles SET can_withdraw_cash = %s WHERE role_name = 'kid'
+        ''', (new_bool,))
     
     if 'kid_allowed_view_history' in data:
-        value = '1' if data['kid_allowed_view_history'] else '0'
-        old_value = current_settings.get('kid_allowed_view_history', '0')
-        if value != old_value:
-            changed_settings['kid_allowed_view_history'] = {'old': old_value == '1', 'new': data['kid_allowed_view_history']}
+        new_bool = bool(data['kid_allowed_view_history'])
+        old_bool = False
+        if current_role_perms:
+            try:
+                old_bool = bool(current_role_perms[3])
+            except Exception:
+                old_bool = False
+        if new_bool != old_bool:
+            changed_settings['kid_allowed_view_history'] = {'old': old_bool, 'new': new_bool}
         cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('kid_allowed_view_history', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+            UPDATE roles SET can_view_history = %s WHERE role_name = 'kid'
+        ''', (new_bool,))
     
     # Handle email settings
     if 'email_smtp_server' in data:
@@ -1693,7 +1586,162 @@ def update_settings():
     
     return jsonify({'message': 'Settings updated successfully'}), 200
 
+
+# Kid permissions endpoints
+@app.route('/api/kid-permissions', methods=['GET'])
+def get_kid_permissions():
+    """Return kid role permissions.
+
+    Prefers values from the `roles` table if present, otherwise falls back
+    to legacy settings keys in the `settings` table.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if row:
+            return jsonify({
+                'kid_allowed_record_chore': bool(row.get('can_record_chore')),
+                'kid_allowed_redeem_points': bool(row.get('can_redeem_points')),
+                'kid_allowed_withdraw_cash': bool(row.get('can_withdraw_cash')),
+                'kid_allowed_view_history': bool(row.get('can_view_history')),
+            })
+
+        # Fallback to settings table if roles row not present
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s, %s, %s)', (
+            'kid_allowed_record_chore', 'kid_allowed_redeem_points', 'kid_allowed_withdraw_cash', 'kid_allowed_view_history'))
+        settings = {r['setting_key']: r['setting_value'] for r in cursor.fetchall()}
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'kid_allowed_record_chore': settings.get('kid_allowed_record_chore', '0') == '1',
+            'kid_allowed_redeem_points': settings.get('kid_allowed_redeem_points', '0') == '1',
+            'kid_allowed_withdraw_cash': settings.get('kid_allowed_withdraw_cash', '0') == '1',
+            'kid_allowed_view_history': settings.get('kid_allowed_view_history', '0') == '1',
+        })
+    except Exception as e:
+        error_msg = str(e)
+        try:
+            log_system_event('kid_permissions_error', f'Error fetching kid permissions: {error_msg}', {'error': error_msg}, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': f'Error fetching kid permissions: {error_msg}'}), 500
+
+
+def _coerce_bool(val):
+    """Coerce a variety of input types to boolean sensibly."""
+    if isinstance(val, bool):
+        return val
+    if val is None:
+        return False
+    if isinstance(val, (int, float)):
+        return bool(val)
+    s = str(val).strip().lower()
+    return s in ('1', 'true', 'yes', 'y', 'on')
+
+
+@app.route('/api/kid-permissions', methods=['PUT'])
+@parent_required
+def set_kid_permissions():
+    """Set kid role permissions (parent-only).
+
+    Accepts JSON with any of the following boolean keys:
+      - kid_allowed_record_chore
+      - kid_allowed_redeem_points
+      - kid_allowed_withdraw_cash
+      - kid_allowed_view_history
+
+    Performs an upsert into the `roles` table and logs changes.
+    """
+    data = request.get_json() or {}
+    allowed_keys = {
+        'kid_allowed_record_chore': 'can_record_chore',
+        'kid_allowed_redeem_points': 'can_redeem_points',
+        'kid_allowed_withdraw_cash': 'can_withdraw_cash',
+        'kid_allowed_view_history': 'can_view_history',
+    }
+
+    # Build column updates from provided keys
+    updates = {}
+    for k, col in allowed_keys.items():
+        if k in data:
+            updates[col] = _coerce_bool(data[k])
+
+    if not updates:
+        return jsonify({'message': 'No permission keys provided'}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        # Fetch current values to compute changes
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        current = cursor.fetchone()
+
+        # Prepare upsert: insert if not exists, otherwise update
+        # Use ON CONFLICT to update existing row (assumes role_name is unique/PK)
+        # Ensure all columns are provided for insert; use current or defaults if missing
+        insert_vals = {
+            'can_record_chore': updates.get('can_record_chore', current.get('can_record_chore') if current else False),
+            'can_redeem_points': updates.get('can_redeem_points', current.get('can_redeem_points') if current else False),
+            'can_withdraw_cash': updates.get('can_withdraw_cash', current.get('can_withdraw_cash') if current else False),
+            'can_view_history': updates.get('can_view_history', current.get('can_view_history') if current else False),
+        }
+
+        cursor.execute('''
+            INSERT INTO roles (role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (role_name) DO UPDATE SET
+                can_record_chore = EXCLUDED.can_record_chore,
+                can_redeem_points = EXCLUDED.can_redeem_points,
+                can_withdraw_cash = EXCLUDED.can_withdraw_cash,
+                can_view_history = EXCLUDED.can_view_history
+        ''', (
+            'kid', insert_vals['can_record_chore'], insert_vals['can_redeem_points'], insert_vals['can_withdraw_cash'], insert_vals['can_view_history']
+        ))
+
+        # Determine which settings changed for logging
+        changed = {}
+        for col, new_val in insert_vals.items():
+            old_val = None
+            if current:
+                old_val = bool(current.get(col))
+            else:
+                old_val = False
+            if bool(old_val) != bool(new_val):
+                # map back to external key name for readability
+                external_key = next((k for k, v in allowed_keys.items() if v == col), col)
+                changed[external_key] = {'old': old_val, 'new': bool(new_val)}
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        try:
+            if changed:
+                log_system_event('kid_permissions_updated', 'Kid permissions updated', changed, 'success')
+            else:
+                log_system_event('kid_permissions_updated', 'Kid permissions saved (no changes)', {}, 'success')
+        except Exception:
+            pass
+
+        return jsonify({'message': 'Kid permissions updated successfully', 'changed': changed}), 200
+    except Exception as e:
+        error_msg = str(e)
+        try:
+            log_system_event('kid_permissions_error', f'Error updating kid permissions: {error_msg}', {'error': error_msg}, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': f'Error updating kid permissions: {error_msg}'}), 500
+
 @app.route('/api/daily-cash-out', methods=['POST'])
+@parent_required
 def manual_daily_cash_out():
     """Manually trigger daily cash out process."""
     try:
@@ -1718,12 +1766,13 @@ def manual_daily_cash_out():
         return jsonify({'error': f'Error processing daily cash out: {error_msg}'}), 500
 
 @app.route('/api/reset-points', methods=['POST'])
+@parent_required
 def reset_points():
     """Reset all users' points balances to 0."""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE "user" SET balance = 0')
+        cursor.execute('UPDATE family_members SET balance = 0')
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -1750,6 +1799,7 @@ def reset_points():
         return jsonify({'error': f'Error resetting points balances: {error_msg}'}), 500
 
 @app.route('/api/reset-cash', methods=['POST'])
+@parent_required
 def reset_cash():
     """Reset all users' cash balances to 0."""
     try:
@@ -1782,6 +1832,7 @@ def reset_cash():
         return jsonify({'error': f'Error resetting cash balances: {error_msg}'}), 500
 
 @app.route('/api/reset-transactions', methods=['POST'])
+@parent_required
 def reset_transactions():
     """Delete all transactions from the database."""
     try:
@@ -2022,6 +2073,7 @@ def send_daily_digest_manual():
         return jsonify({'error': f'Error sending daily digest: {error_msg}'}), 500
 
 @app.route('/api/withdraw-cash', methods=['POST'])
+@kid_permission_required('can_withdraw_cash')
 def withdraw_cash():
     """Withdraw cash from a user's cash balance."""
     data = request.get_json()
@@ -2047,7 +2099,7 @@ def withdraw_cash():
     # Check user exists and get cash balance
     cursor.execute('''
         SELECT u.user_id, COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM "user" u
+        FROM family_members u
         LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
         WHERE u.user_id = %s
     ''', (data['user_id'],))
@@ -2090,7 +2142,7 @@ def withdraw_cash():
     transaction_id = result['transaction_id'] if result else None
     
     # Get user name for email notification
-    cursor.execute('SELECT full_name FROM "user" WHERE user_id = %s', (data['user_id'],))
+    cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
     user_result = cursor.fetchone()
     user_name = user_result.get('full_name') if user_result else 'Unknown User'
     
@@ -2147,7 +2199,7 @@ def process_daily_cash_out(triggered_manually=False):
     max_rollover = get_setting('max_rollover_points', 4)
     
     # Get all users
-    cursor.execute('SELECT user_id, balance FROM "user"')
+    cursor.execute('SELECT user_id, balance FROM family_members')
     users = cursor.fetchall()
     
     for user in users:
@@ -2178,7 +2230,7 @@ def process_daily_cash_out(triggered_manually=False):
                 
                 # Update point balance to max_rollover
                 cursor.execute('''
-                    UPDATE "user" 
+                    UPDATE family_members 
                     SET balance = %s 
                     WHERE user_id = %s
                 ''', (rollover, user_id))
@@ -2194,7 +2246,7 @@ def process_daily_cash_out(triggered_manually=False):
             # Just cap the balance at max_rollover if it exceeds it
             if balance > max_rollover:
                 cursor.execute('''
-                    UPDATE "user" 
+                    UPDATE family_members 
                     SET balance = %s 
                     WHERE user_id = %s
                 ''', (max_rollover, user_id))
@@ -2260,6 +2312,197 @@ def send_daily_digest_email(force=False):
     # Check if daily digest is enabled (unless forced)
     if not force and not get_email_notification_setting('email_notify_daily_digest'):
         return
+
+
+    @app.route('/api/record-chore', methods=['POST'])
+    @kid_permission_required('kid_allowed_record_chore')
+    def record_chore():
+        """Record a chore completion as a transaction (kids can call this if permitted)."""
+        data = request.get_json() or {}
+
+        if not data.get('user_id'):
+            return jsonify({'error': 'user_id is required'}), 400
+
+        # Prefer chore_id (stored chore), but allow ad-hoc chore_name with points
+        chore_id = data.get('chore_id')
+        chore_name = data.get('chore_name')
+
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        description = None
+        points = None
+
+        try:
+            if chore_id:
+                # Lookup stored chore
+                cursor.execute('SELECT chore_name, points FROM chores WHERE chore_id = %s', (chore_id,))
+                chore = cursor.fetchone()
+                if not chore:
+                    cursor.close()
+                    conn.close()
+                    return jsonify({'error': 'Chore not found'}), 404
+                description = chore.get('chore_name')
+                points = int(chore.get('points') or 0)
+            elif chore_name and 'points' in data:
+                description = chore_name
+                try:
+                    points = int(data.get('points'))
+                except (ValueError, TypeError):
+                    cursor.close()
+                    conn.close()
+                    return jsonify({'error': 'points must be an integer'}), 400
+            else:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Either chore_id or chore_name with points is required'}), 400
+
+            if points is None or points <= 0:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Points must be greater than 0'}), 400
+
+            # Insert transaction and update balance
+            timestamp = get_system_timestamp()
+            cursor.execute(
+                'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
+                (data['user_id'], description, points, 'chore_completed', timestamp)
+            )
+            res = cursor.fetchone()
+            transaction_id = res['transaction_id'] if res else None
+
+            cursor.execute('UPDATE family_members SET balance = balance + %s WHERE user_id = %s', (points, data['user_id']))
+
+            # Get user name for notification/logging
+            cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+            user_result = cursor.fetchone()
+            user_name = user_result.get('full_name') if user_result else 'Unknown User'
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            # Log and notify
+            try:
+                log_system_event('chore_completed', f'{user_name} completed chore', {'user_id': data['user_id'], 'description': description, 'points': points}, 'success')
+            except Exception:
+                pass
+
+            try:
+                send_notification_email('chore_completed', user_name, description, points, data['user_id'])
+            except Exception:
+                pass
+
+            return jsonify({'transaction_id': transaction_id, 'message': f'Chore recorded: {description}', 'points': points}), 200
+        except Exception as e:
+            error_msg = str(e)
+            try:
+                log_system_event('chore_record_error', f'Error recording chore: {error_msg}', {'error': error_msg}, 'error')
+            except Exception:
+                pass
+            try:
+                cursor.close()
+                conn.close()
+            except Exception:
+                pass
+            return jsonify({'error': f'Error recording chore: {error_msg}'}), 500
+
+
+    @app.route('/api/redeem-points', methods=['POST'])
+    @kid_permission_required('kid_allowed_redeem_points')
+    def redeem_points():
+        """Redeem points for rewards or cash (kids can call this if permitted)."""
+        data = request.get_json() or {}
+
+        if not data.get('user_id'):
+            return jsonify({'error': 'user_id is required'}), 400
+
+        # Expect positive integer 'points' to redeem
+        try:
+            points = int(data.get('points'))
+        except (ValueError, TypeError):
+            return jsonify({'error': 'points must be an integer'}), 400
+
+        if points <= 0:
+            return jsonify({'error': 'points must be greater than 0'}), 400
+
+        redemption_type = data.get('redemption_type')  # e.g. 'money' or other
+        description = data.get('description') or (f'Redemed {points} points' + (f' for {redemption_type}' if redemption_type else ''))
+
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        try:
+            # Verify user balance
+            cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (data['user_id'],))
+            user_row = cursor.fetchone()
+            if not user_row:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'User not found'}), 404
+
+            current_balance = int(user_row.get('balance') or 0)
+            if current_balance < points:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': f'Insufficient points balance. User has {current_balance} points.'}), 400
+
+            # If redeeming for money, require multiples of 5 points (5 points = $1)
+            if redemption_type == 'money':
+                if points % 5 != 0:
+                    cursor.close()
+                    conn.close()
+                    return jsonify({'error': 'Points must be a multiple of 5 to redeem for money (5 points = $1)'}), 400
+                cash_amount = points // 5
+                # Ensure cash_balance record exists
+                cursor.execute('INSERT INTO cash_balances (user_id, cash_balance) VALUES (%s, 0.0) ON CONFLICT (user_id) DO NOTHING', (data['user_id'],))
+                cursor.execute('UPDATE cash_balances SET cash_balance = cash_balance + %s WHERE user_id = %s', (float(cash_amount), data['user_id']))
+
+            # Insert transaction (store negative points)
+            timestamp = get_system_timestamp()
+            cursor.execute(
+                'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
+                (data['user_id'], description, -points, 'points_redemption', timestamp)
+            )
+            res = cursor.fetchone()
+            transaction_id = res['transaction_id'] if res else None
+
+            # Subtract points from user balance
+            cursor.execute('UPDATE family_members SET balance = balance - %s WHERE user_id = %s', (points, data['user_id']))
+
+            # Get user name for notification/logging
+            cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+            user_result = cursor.fetchone()
+            user_name = user_result.get('full_name') if user_result else 'Unknown User'
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            # Log and notify
+            try:
+                log_system_event('points_redeemed', f'{user_name} redeemed points', {'user_id': data['user_id'], 'points': points, 'redemption_type': redemption_type}, 'success')
+            except Exception:
+                pass
+
+            try:
+                send_notification_email('points_redeemed', user_name, description, points, data['user_id'])
+            except Exception:
+                pass
+
+            return jsonify({'transaction_id': transaction_id, 'message': f'Redeemed {points} points', 'new_balance': current_balance - points}), 200
+        except Exception as e:
+            error_msg = str(e)
+            try:
+                log_system_event('redeem_points_error', f'Error redeeming points: {error_msg}', {'error': error_msg}, 'error')
+            except Exception:
+                pass
+            try:
+                cursor.close()
+                conn.close()
+            except Exception:
+                pass
+            return jsonify({'error': f'Error redeeming points: {error_msg}'}), 500
     
     try:
         # Get parent email addresses
@@ -2303,7 +2546,7 @@ def send_daily_digest_email(force=False):
                 t.timestamp,
                 u.full_name as user_name
             FROM transactions t
-            LEFT JOIN "user" u ON t.user_id = u.user_id
+            LEFT JOIN family_members u ON t.user_id = u.user_id
             WHERE t.timestamp >= %s AND t.timestamp <= %s
             ORDER BY t.timestamp DESC
         ''', (yesterday_start, yesterday_end))
@@ -2316,7 +2559,7 @@ def send_daily_digest_email(force=False):
                 u.full_name,
                 u.balance as point_balance,
                 COALESCE(cb.cash_balance, 0.0) as cash_balance
-            FROM "user" u
+            FROM family_members u
             LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
             ORDER BY u.user_id
         ''')

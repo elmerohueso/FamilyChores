@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings - Family Chores</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+    {% include '_head_includes.html' %}
 </head>
 <body>
     <div class="container">
@@ -359,10 +358,20 @@
                 document.getElementById('dailyCooldownHours').value = settings.daily_cooldown_hours || 12;
                 document.getElementById('weeklyCooldownDays').value = settings.weekly_cooldown_days || 4;
                 document.getElementById('monthlyCooldownDays').value = settings.monthly_cooldown_days || 14;
-                document.getElementById('kidAllowedRecordChore').checked = settings.kid_allowed_record_chore || false;
-                document.getElementById('kidAllowedRedeemPoints').checked = settings.kid_allowed_redeem_points || false;
-                document.getElementById('kidAllowedWithdrawCash').checked = settings.kid_allowed_withdraw_cash || false;
-                document.getElementById('kidAllowedViewHistory').checked = settings.kid_allowed_view_history || false;
+                // Fetch kid permissions from the dedicated endpoint (may come from roles table)
+                try {
+                    const perms = await getPermissions();
+                    document.getElementById('kidAllowedRecordChore').checked = perms.record_chore || false;
+                    document.getElementById('kidAllowedRedeemPoints').checked = perms.redeem_points || false;
+                    document.getElementById('kidAllowedWithdrawCash').checked = perms.withdraw_cash || false;
+                    document.getElementById('kidAllowedViewHistory').checked = perms.view_history || false;
+                } catch (e) {
+                    // Fall back to settings values if permissions fetch fails
+                    document.getElementById('kidAllowedRecordChore').checked = settings.kid_allowed_record_chore || false;
+                    document.getElementById('kidAllowedRedeemPoints').checked = settings.kid_allowed_redeem_points || false;
+                    document.getElementById('kidAllowedWithdrawCash').checked = settings.kid_allowed_withdraw_cash || false;
+                    document.getElementById('kidAllowedViewHistory').checked = settings.kid_allowed_view_history || false;
+                }
                 
                 // Email settings
                 document.getElementById('emailSmtpServer').value = settings.email_smtp_server || '';
