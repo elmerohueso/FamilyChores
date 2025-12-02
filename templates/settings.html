@@ -322,6 +322,7 @@
                         <!-- Vertical gap between reset button groups -->
                         <div class="mb-3" aria-hidden="true"></div>
                         <div class="reset-buttons">
+                            <button class="btn btn-red-on-white" onclick="resetPassword()">Reset Password</button>
                             <button class="btn btn-red-on-white" onclick="confirmSignOut()">Sign Out</button>
                         </div>
                     </div>
@@ -339,6 +340,32 @@
                     <button class="btn btn-red-on-white btn-md" id="confirmBtn" onclick="executeReset()">Confirm</button>
                     <button class="btn btn-gray-on-cream btn-md" onclick="closeConfirmation()">Cancel</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Password Reset Dialog -->
+        <div id="passwordResetDialog" class="overlay">
+            <div class="overlay-content" style="max-width:480px;">
+                <div class="text-title">Reset Password</div>
+                <div style="margin-top:16px;">
+                    <div class="input-group" style="margin-bottom:20px;">
+                        <label class="label-form">Current password</label>
+                        <input type="password" id="currentPasswordInput" class="form-input">
+                    </div>
+                    <div class="input-group" style="margin-bottom:20px;">
+                        <label class="label-form">New password</label>
+                        <input type="password" id="newPasswordInput" class="form-input">
+                    </div>
+                    <div class="input-group" style="margin-bottom:20px;">
+                        <label class="label-form" style="margin-bottom:20px;">Confirm new password</label>
+                        <input type="password" id="confirmNewPasswordInput" class="form-input">
+                    </div>
+                </div>
+                <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end;">
+                    <button class="btn btn-gray-on-cream btn-md" onclick="closePasswordResetDialog()">Cancel</button>
+                    <button class="btn btn-white-on-purple btn-md" id="passwordResetSubmitBtn" onclick="submitPasswordReset()">Reset Password</button>
+                </div>
+                <div id="passwordResetMessage" class="system-message" style="margin-top:12px;"></div>
             </div>
         </div>
 
@@ -517,6 +544,69 @@
             pendingDeleteChoreId = null;
             pendingDeleteUserId = null;
             pendingSignOut = false;
+        }
+
+        // Password reset UI
+        function resetPassword() {
+            // Clear inputs and show modal
+            document.getElementById('currentPasswordInput').value = '';
+            document.getElementById('newPasswordInput').value = '';
+            document.getElementById('confirmNewPasswordInput').value = '';
+            document.getElementById('passwordResetMessage').textContent = '';
+            document.getElementById('passwordResetDialog').classList.add('show');
+        }
+
+        function closePasswordResetDialog() {
+            const dlg = document.getElementById('passwordResetDialog');
+            if (dlg) dlg.style.display = 'none';
+        }
+
+        async function submitPasswordReset() {
+            const current = document.getElementById('currentPasswordInput').value || '';
+            const nw = document.getElementById('newPasswordInput').value || '';
+            const confirm = document.getElementById('confirmNewPasswordInput').value || '';
+            const msgEl = document.getElementById('passwordResetMessage');
+
+            msgEl.textContent = '';
+
+            if (!nw) { msgEl.textContent = 'New password is required'; return; }
+            if (nw !== confirm) { msgEl.textContent = 'New passwords do not match'; return; }
+
+            // Disable submit while request in flight
+            const btn = document.getElementById('passwordResetSubmitBtn');
+            btn.disabled = true;
+            btn.textContent = 'Resetting...';
+
+            try {
+                // Use the shared helper in static/js/utils.js
+                const resp = await resetTenantPassword(current, nw);
+                const data = await (resp.json().catch(() => ({})));
+
+                if (resp.ok) {
+                    showToast('Password changed successfully');
+                    closePasswordResetDialog();
+
+                    // Backend revokes refresh tokens and clears cookies; ensure client fully signs out
+                    setTimeout(async () => {
+                        try {
+                            await tenantLogout();
+                        } catch (err) {
+                            // Fallback: navigate to root
+                            window.location.href = '/';
+                        }
+                    }, 700);
+                } else {
+                    showToast(data.error || 'Error changing password', true);
+                    msgEl.textContent = data.error || 'Error changing password';
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('Network error while changing password', true);
+                msgEl.textContent = 'Network error';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Reset Password';
+            }
         }
 
         async function executeReset() {

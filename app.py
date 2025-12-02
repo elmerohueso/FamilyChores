@@ -726,6 +726,72 @@ def api_create_tenant():
         conn.close()
 
 
+@app.route('/api/tenant/password', methods=['POST'])
+def api_change_tenant_password():
+    """Change the authenticated tenant's password.
+
+    Expects JSON: { current_password: <str>, new_password: <str> }
+    Requires authentication (JWT or valid refresh token) so `g.tenant_id` is set.
+    """
+    tenant_id = getattr(g, 'tenant_id', None)
+    if not tenant_id:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    data = request.get_json(silent=True) or {}
+    current = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+
+    if not new_password:
+        return jsonify({'error': 'new_password is required'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute('SELECT tenant_password FROM tenants WHERE tenant_id = %s', (tenant_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'error': 'Tenant not found'}), 404
+
+        stored = row[0]
+        # Only accept Argon2-formatted hashes
+        if not (isinstance(stored, str) and stored.startswith('$argon2')):
+            return jsonify({'error': 'Invalid credential format'}), 500
+
+        try:
+            # Verify current password
+            ph.verify(stored, current)
+        except Exception:
+            return jsonify({'error': 'Current password is incorrect'}), 401
+
+        # Hash and store new password, revoke all refresh tokens for this tenant
+        hashed = ph.hash(new_password)
+        cur.execute('UPDATE tenants SET tenant_password = %s WHERE tenant_id = %s', (hashed, tenant_id))
+        # Revoke any existing refresh tokens so existing sessions must re-auth
+        cur.execute('UPDATE refresh_tokens SET revoked = TRUE WHERE tenant_id = %s', (tenant_id,))
+        conn.commit()
+
+        try:
+            log_system_event('tenant_password_changed', f'Tenant password changed and tokens revoked', {'tenant_id': str(tenant_id)}, 'success')
+        except Exception:
+            pass
+
+        # Return response that also clears the refresh cookie and tenant_id cookie (forces client to re-login)
+        resp = jsonify({'message': 'Password updated'})
+        resp.set_cookie('refresh_token', '', expires=0)
+        resp.set_cookie('tenant_id', '', expires=0)
+        return resp, 200
+    except Exception as e:
+        conn.rollback()
+        try:
+            log_system_event('tenant_password_change_error', f'Error changing tenant password: {e}', None, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': 'Error changing password'}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.route('/api/auth-check', methods=['GET'])
 def api_auth_check():
     """Validate current authentication state.

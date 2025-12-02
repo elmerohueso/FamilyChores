@@ -970,3 +970,26 @@ function syncScroll(source, topScrollId, bottomScrollId) {
         top.scrollLeft = bottom.scrollLeft;
     }
 }
+
+/**
+ * Change the authenticated tenant password.
+ * @param {string} currentPassword - Current password
+ * @param {string} newPassword - New password
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function resetTenantPassword(currentPassword, newPassword) {
+    try {
+        const response = await fetch('/api/tenant/password', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+        });
+        return response;
+    } catch (error) {
+        console.error('Error resetting tenant password:', error);
+        throw error;
+    }
+}
