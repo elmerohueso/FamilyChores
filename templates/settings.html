@@ -24,6 +24,17 @@
                 <form id="settingsForm">
                     <div class="setting-item">
                         <div class="setting-label">
+                            <span class="text-title-sm">Parent PIN</span>
+                        </div>
+                        <div class="text-body">
+                            4-digit PIN used for parent login. Leave empty to keep existing.
+                        </div>
+                        <div class="input-group" style="margin-top: 12px;">
+                            <input type="text" id="parentPin" class="form-input" placeholder="Leave empty to keep existing" maxlength="4" pattern="\\d{4}" inputmode="numeric" style="width: 140px;">
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">
                             <span class="text-title-sm">Automatic Daily Cash Out</span>
                             <label class="toggle-switch">
                                 <input type="checkbox" id="automaticDailyCashOut">
@@ -412,6 +423,8 @@
                 document.getElementById('emailSmtpPort').value = settings.email_smtp_port || '587';
                 document.getElementById('emailUsername').value = settings.email_username || '';
                 document.getElementById('emailPassword').value = ''; // Don't populate password field
+                // Parent PIN: never populate the current PIN for security; leave empty to keep existing
+                document.getElementById('parentPin').value = '';
                 document.getElementById('emailSenderName').value = settings.email_sender_name || 'Family Chores';
                 document.getElementById('emailNotifyChoreCompleted').checked = settings.email_notify_chore_completed || false;
                 document.getElementById('emailNotifyPointsRedeemed').checked = settings.email_notify_points_redeemed || false;
@@ -448,6 +461,7 @@
                 email_smtp_port: document.getElementById('emailSmtpPort').value.trim(),
                 email_username: document.getElementById('emailUsername').value.trim(),
                 email_password: document.getElementById('emailPassword').value.trim(), // Only update if provided
+                parent_pin: document.getElementById('parentPin').value.trim(),
                 email_sender_name: document.getElementById('emailSenderName').value.trim(),
                 email_notify_chore_completed: document.getElementById('emailNotifyChoreCompleted').checked,
                 email_notify_points_redeemed: document.getElementById('emailNotifyPointsRedeemed').checked,
@@ -474,6 +488,15 @@
             if (data.monthly_cooldown_days < 0) {
                 showMessage('Monthly cooldown days must be non-negative', true);
                 return;
+            }
+
+            // Validate parent PIN client-side: allow empty or exactly 4 digits
+            if (data.parent_pin) {
+                const pinRegex = /^\d{4}$/;
+                if (!pinRegex.test(data.parent_pin)) {
+                    showMessage('Parent PIN must be exactly 4 digits or left empty to keep existing', true);
+                    return;
+                }
             }
 
             try {

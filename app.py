@@ -391,8 +391,40 @@ def validate_pin():
     """Validate parent PIN."""
     data = request.get_json()
     pin = data.get('pin', '')
-    
-    if pin == PARENT_PIN:
+    # Prefer parent PIN stored in the settings table when available.
+    db_pin = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT setting_value FROM settings WHERE setting_key = %s", ('parent_pin',))
+        row = cur.fetchone()
+        if row and row.get('setting_value') is not None:
+            raw_val = str(row.get('setting_value'))
+            # Try decrypting stored value (new encrypted format). If decryption fails,
+            # fall back to raw numeric value for legacy installs.
+            try_decrypted = decrypt_password(raw_val)
+            if try_decrypted and try_decrypted.isdigit():
+                db_pin = try_decrypted
+            elif raw_val.isdigit():
+                db_pin = raw_val
+            else:
+                db_pin = None
+    except Exception:
+        # Don't fail validation if DB read fails; fall back to env var below
+        db_pin = None
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    effective_pin = db_pin if db_pin else PARENT_PIN
+
+    if pin == effective_pin:
         session['user_role'] = 'parent'
         
         # Log successful parent login
@@ -1758,7 +1790,9 @@ def get_settings():
         'email_notify_points_redeemed': settings_dict.get('email_notify_points_redeemed', '0') == '1',
         'email_notify_cash_withdrawn': settings_dict.get('email_notify_cash_withdrawn', '0') == '1',
         'email_notify_daily_digest': settings_dict.get('email_notify_daily_digest', '0') == '1',
-        'parent_email_addresses': settings_dict.get('parent_email_addresses', '')
+        'parent_email_addresses': settings_dict.get('parent_email_addresses', ''),
+        # For security, never return the actual parent PIN. Frontend will leave field blank to keep existing.
+        'parent_pin': ''
     }
     
     return jsonify(result)
@@ -2090,6 +2124,32 @@ def update_settings():
             VALUES ('parent_email_addresses', %s)
             ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
         ''', (new_value,))
+
+    # Handle parent PIN: only update if provided (non-empty). Accept only exactly 4 digits.
+    if 'parent_pin' in data:
+        try:
+            pin_value = str(data['parent_pin'] or '').strip()
+        except Exception:
+            pin_value = ''
+
+        # If empty, user chose to keep existing PIN; do nothing
+        if pin_value:
+            # Validate exactly 4 digits
+            if not (len(pin_value) == 4 and pin_value.isdigit()):
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Parent PIN must be exactly 4 digits or left empty to keep existing'}), 400
+
+            old_value = current_settings.get('parent_pin', '')
+            if pin_value != old_value:
+                changed_settings['parent_pin'] = {'old': '<set>' if old_value else '<not set>', 'new': '<changed>'}
+            # Encrypt the PIN before storing for security
+            encrypted_pin = encrypt_password(pin_value)
+            cursor.execute('''
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES ('parent_pin', %s)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (encrypted_pin,))
     
     conn.commit()
     cursor.close()
