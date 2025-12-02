@@ -322,7 +322,7 @@
                         <!-- Vertical gap between reset button groups -->
                         <div class="mb-3" aria-hidden="true"></div>
                         <div class="reset-buttons">
-                            <button class="btn btn-red-on-white" onclick="tenantLogout()">Sign Out</button>
+                            <button class="btn btn-red-on-white" onclick="confirmSignOut()">Sign Out</button>
                         </div>
                     </div>
                     </div>
@@ -467,6 +467,7 @@
         let pendingResetType = null;
         let pendingDeleteChoreId = null;
         let pendingDeleteUserId = null;
+        let pendingSignOut = false;
 
         function confirmDeleteChore(choreId, choreName) {
             pendingDeleteChoreId = choreId;
@@ -503,11 +504,19 @@
             document.getElementById('confirmationDialog').classList.add('show');
         }
 
+        function confirmSignOut() {
+            pendingSignOut = true;
+            document.getElementById('confirmTitle').textContent = 'Sign Out';
+            document.getElementById('confirmMessage').textContent = 'Are you sure you want to completely sign out of Family Chores? This will end your session and return to the login page.';
+            document.getElementById('confirmationDialog').classList.add('show');
+        }
+
         function closeConfirmation() {
             document.getElementById('confirmationDialog').classList.remove('show');
             pendingResetType = null;
             pendingDeleteChoreId = null;
             pendingDeleteUserId = null;
+            pendingSignOut = false;
         }
 
         async function executeReset() {
@@ -559,6 +568,19 @@
 
             // Handle reset operations
             if (!pendingResetType) {
+                // If no reset type, check for sign out
+                if (pendingSignOut) {
+                    closeConfirmation();
+                    try {
+                        // Call tenantLogout from utils.js to clear session and redirect
+                        await tenantLogout();
+                    } catch (err) {
+                        console.error('Error during sign out:', err);
+                        // Ensure dialog closed even on error
+                        closeConfirmation();
+                    }
+                    return;
+                }
                 closeConfirmation();
                 return;
             }
