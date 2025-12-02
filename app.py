@@ -414,20 +414,9 @@ def validate_pin():
                 # Continue to fallback to global setting or env var
                 db_pin = None
 
-        # If no tenant-scoped PIN, fall back to global settings table
+        # Do not fall back to global settings; tenant-scoped only
         if db_pin is None:
-            try:
-                cur.execute("SELECT setting_value FROM settings WHERE setting_key = %s", ('parent_pin',))
-                row = cur.fetchone()
-                if row and row.get('setting_value') is not None:
-                    raw_val = str(row.get('setting_value'))
-                    try_decrypted = decrypt_password(raw_val)
-                    if try_decrypted and try_decrypted.isdigit():
-                        db_pin = try_decrypted
-                    elif raw_val.isdigit():
-                        db_pin = raw_val
-            except Exception:
-                db_pin = None
+            db_pin = None
     except Exception:
         # Don't fail validation if DB read fails; fall back to env var below
         db_pin = None
@@ -983,10 +972,17 @@ def withdraw_cash_page():
 @kid_or_parent_required
 def get_chores():
     """Get all chores. All chores are visible, but those with requires_approval=True are greyed out for kids."""
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # Return chores ordered by point value, and treats leading underscores as spaces for sorting by chore name
-    cursor.execute('SELECT * FROM chores ORDER BY point_value, REPLACE(chore, \'_\', \' \') ASC')
+    # Return tenant-scoped chores ordered by point value, and treats leading underscores as spaces for sorting by chore name
+    cursor.execute(
+        'SELECT * FROM tenant_chores WHERE tenant_id = %s ORDER BY point_value, REPLACE(chore, \'_\', \' \') ASC',
+        (tenant_id,)
+    )
     chores = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -998,10 +994,20 @@ def delete_chore(chore_id):
     """Delete a chore without affecting existing transactions."""
     conn = get_db_connection()
     cursor = conn.cursor()
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
     
     try:
         # First, check if chore exists and get chore name for logging
-        cursor.execute('SELECT chore FROM chores WHERE chore_id = %s', (chore_id,))
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
+        cursor.execute('SELECT chore FROM tenant_chores WHERE chore_id = %s AND tenant_id = %s', (chore_id, tenant_id))
         chore_result = cursor.fetchone()
         if not chore_result:
             cursor.close()
@@ -1017,7 +1023,7 @@ def delete_chore(chore_id):
         chore_name = chore_result[0]  # Get chore name from result
         
         # Delete the chore (transactions keep their original description)
-        cursor.execute('DELETE FROM chores WHERE chore_id = %s', (chore_id,))
+        cursor.execute('DELETE FROM tenant_chores WHERE chore_id = %s AND tenant_id = %s', (chore_id, tenant_id))
         
         conn.commit()
         cursor.close()
@@ -1074,8 +1080,12 @@ def update_chore(chore_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Get current chore values for comparison
-    cursor.execute('SELECT chore, point_value, "repeat", requires_approval FROM chores WHERE chore_id = %s', (chore_id,))
+    # Require tenant context and get current chore values for comparison
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
+    cursor.execute('SELECT chore, point_value, "repeat", requires_approval FROM tenant_chores WHERE chore_id = %s AND tenant_id = %s', (chore_id, tenant_id))
     chore_result = cursor.fetchone()
     if not chore_result:
         cursor.close()
@@ -1142,9 +1152,10 @@ def update_chore(chore_id):
             return jsonify({'error': 'No fields to update'}), 400
         
         params.append(chore_id)
-        
+        params.append(tenant_id)
+
         cursor.execute(
-            f'UPDATE chores SET {", ".join(updates)} WHERE chore_id = %s',
+            f'UPDATE tenant_chores SET {", ".join(updates)} WHERE chore_id = %s AND tenant_id = %s',
             params
         )
         
@@ -1241,9 +1252,13 @@ def create_chore():
     cursor = conn.cursor()
     
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         cursor.execute(
-            'INSERT INTO chores (chore, point_value, "repeat", requires_approval) VALUES (%s, %s, %s, %s) RETURNING chore_id',
-            (data['chore'], point_value, repeat_value, requires_approval)
+            'INSERT INTO tenant_chores (tenant_id, chore, point_value, "repeat", requires_approval) VALUES (%s, %s, %s, %s, %s) RETURNING chore_id',
+            (tenant_id, data['chore'], point_value, repeat_value, requires_approval)
         )
         chore_id = cursor.fetchone()[0]
         conn.commit()
@@ -1288,7 +1303,10 @@ def import_chores():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     imported = 0
     errors = 0
     
@@ -1320,8 +1338,8 @@ def import_chores():
                 continue
             
             cursor.execute(
-                'INSERT INTO chores (chore, point_value, "repeat") VALUES (%s, %s, %s)',
-                (chore, point_value, repeat)
+                'INSERT INTO tenant_chores (tenant_id, chore, point_value, "repeat") VALUES (%s, %s, %s, %s)',
+                (tenant_id, chore, point_value, repeat)
             )
             imported += 1
         except Exception as e:
@@ -1366,6 +1384,10 @@ def import_chores():
 @kid_or_parent_required
 def get_users():
     """Get all users with their cash balances."""
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute('''
@@ -1375,10 +1397,11 @@ def get_users():
             u.balance,
             u.avatar_path,
             COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM family_members u
-        LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
+        FROM tenant_users u
+        LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
+        WHERE u.tenant_id = %s
         ORDER BY u.user_id
-    ''')
+    ''', (tenant_id,))
     users = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -1405,10 +1428,14 @@ def upload_avatar(user_id):
     if file_size > MAX_AVATAR_SIZE:
         return jsonify({'error': 'File too large. Maximum size is 5MB'}), 400
     
-    # Verify user exists
+    # Verify user exists (tenant-scoped)
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT user_id FROM family_members WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT user_id FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     user = cursor.fetchone()
     if not user:
         cursor.close()
@@ -1423,8 +1450,8 @@ def upload_avatar(user_id):
     # Save file
     file.save(filepath)
     
-    # Delete old avatar if exists
-    cursor.execute('SELECT avatar_path FROM family_members WHERE user_id = %s', (user_id,))
+    # Delete old avatar if exists (tenant-scoped)
+    cursor.execute('SELECT avatar_path FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     old_avatar = cursor.fetchone()
     if old_avatar and old_avatar.get('avatar_path'):
         old_path = os.path.join(AVATAR_DIR, os.path.basename(old_avatar['avatar_path']))
@@ -1434,14 +1461,14 @@ def upload_avatar(user_id):
             except:
                 pass  # Ignore errors deleting old file
     
-    # Get user name for logging
-    cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (user_id,))
+    # Get user name for logging (tenant-scoped)
+    cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     user_result = cursor.fetchone()
     user_name = user_result.get('full_name') if user_result else f'User {user_id}'
-    
+
     # Update database
     relative_path = os.path.join('avatars', filename)
-    cursor.execute('UPDATE family_members SET avatar_path = %s WHERE user_id = %s', (relative_path, user_id))
+    cursor.execute('UPDATE tenant_users SET avatar_path = %s WHERE user_id = %s AND tenant_id = %s', (relative_path, user_id, tenant_id))
     conn.commit()
     cursor.close()
     conn.close()
@@ -1485,9 +1512,13 @@ def create_user():
     cursor = conn.cursor()
     
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         cursor.execute(
-            'INSERT INTO family_members (full_name, balance) VALUES (%s, %s) RETURNING user_id',
-            (data['full_name'], data.get('balance', 0))
+            'INSERT INTO tenant_users (tenant_id, full_name, balance) VALUES (%s, %s, %s) RETURNING user_id',
+            (tenant_id, data['full_name'], data.get('balance', 0))
         )
         user_id = cursor.fetchone()[0]
         conn.commit()
@@ -1523,9 +1554,13 @@ def delete_user(user_id):
     """Delete a user and all associated data."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Check if user exists and get user name for logging
-    cursor.execute('SELECT full_name, avatar_path FROM family_members WHERE user_id = %s', (user_id,))
+
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
+    # Check if user exists and get user name for logging (tenant-scoped)
+    cursor.execute('SELECT full_name, avatar_path FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     user = cursor.fetchone()
     if not user:
         cursor.close()
@@ -1533,11 +1568,11 @@ def delete_user(user_id):
         # Log error
         try:
             log_system_event('user_deleted', f'Failed to delete user: User not found', 
-                            {'user_id': user_id}, 'error')
+                            {'user_id': user_id, 'tenant_id': tenant_id}, 'error')
         except Exception:
             pass
         return jsonify({'error': 'User not found'}), 404
-    
+
     user_name = user['full_name']
     
     # Delete avatar file if exists
@@ -1555,16 +1590,16 @@ def delete_user(user_id):
     # If you want to delete transactions too, uncomment the line below:
     # Delete transactions first to avoid foreign key issues, then balances.
     try:
-        cursor.execute('DELETE FROM transactions WHERE user_id = %s', (user_id,))
+        cursor.execute('DELETE FROM tenant_transactions WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
         deleted_tx = cursor.rowcount
     except Exception:
         # If transactions table or FK constraints behave differently, ignore and continue
         deleted_tx = None
 
-    cursor.execute('DELETE FROM cash_balances WHERE user_id = %s', (user_id,))
+    cursor.execute('DELETE FROM tenant_cash_balances WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     
-    # Delete user
-    cursor.execute('DELETE FROM family_members WHERE user_id = %s', (user_id,))
+    # Delete user (tenant-scoped)
+    cursor.execute('DELETE FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     
     conn.commit()
     cursor.close()
@@ -1584,9 +1619,13 @@ def delete_user(user_id):
 @kid_or_parent_required
 def get_transactions():
     """Get all transactions with user and chore names."""
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # Join with users to get user name, description is now directly in transactions table
+    # Join with tenant_users to get user name, description is now directly in tenant_transactions table
     cursor.execute('''
         SELECT 
             t.transaction_id,
@@ -1596,10 +1635,11 @@ def get_transactions():
             t.transaction_type,
             t.timestamp,
             u.full_name as user_name
-        FROM transactions t
-        LEFT JOIN family_members u ON t.user_id = u.user_id
+        FROM tenant_transactions t
+        LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
+        WHERE t.tenant_id = %s
         ORDER BY t.timestamp DESC
-    ''')
+    ''', (tenant_id,))
     transactions = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -1628,12 +1668,18 @@ def get_email_notification_setting(setting_key):
     """Get email notification setting from database."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', (setting_key,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    
-    if result:
+    # Prefer tenant-scoped setting when tenant context is available
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    result = None
+    try:
+        if tenant_id:
+            cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, setting_key))
+            result = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+    if result and result.get('setting_value') is not None:
         return result.get('setting_value') == '1'
     return False
 
@@ -1655,24 +1701,36 @@ def send_notification_email(notification_type, user_name, description, value=Non
     # Get parent email addresses to send notification to
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s)', ('parent_email_addresses', 'email_username'))
+    # Tenant-scoped email settings only
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        cursor.close()
+        conn.close()
+        return
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', (tenant_id, 'parent_email_addresses', 'email_username'))
     results = cursor.fetchall()
     
-    # Get user's current balances if user_id is provided
+    # Get user's current balances if user_id is provided (tenant-scoped)
     point_balance = None
     cash_balance = None
     if user_id:
-        cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (user_id,))
-        user_result = cursor.fetchone()
-        if user_result:
-            point_balance = user_result.get('balance') or 0
-        
-        cursor.execute('SELECT cash_balance FROM cash_balances WHERE user_id = %s', (user_id,))
-        cash_result = cursor.fetchone()
-        if cash_result:
-            cash_balance = cash_result.get('cash_balance') or 0
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if tenant_id:
+            cursor.execute('SELECT balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
+            user_result = cursor.fetchone()
+            if user_result:
+                point_balance = user_result.get('balance') or 0
+
+            cursor.execute('SELECT cash_balance FROM tenant_cash_balances WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
+            cash_result = cursor.fetchone()
+            if cash_result:
+                cash_balance = cash_result.get('cash_balance') or 0
+            else:
+                cash_balance = 0
         else:
-            cash_balance = 0
+            # No tenant context; skip balance lookup
+            point_balance = None
+            cash_balance = None
     
     cursor.close()
     conn.close()
@@ -1800,7 +1858,12 @@ def get_settings():
     """Get all settings."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_key, setting_value FROM settings')
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        cursor.close()
+        conn.close()
+        return jsonify({}), 200
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s', (tenant_id,))
     settings = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -1852,8 +1915,13 @@ def update_settings():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Get current settings to compare for logging
-    cursor.execute('SELECT setting_key, setting_value FROM settings')
+    # Get current tenant-scoped settings to compare for logging
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Tenant context required'}), 400
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s', (tenant_id,))
     current_settings = {row['setting_key']: row['setting_value'] for row in cursor.fetchall()}
     cursor.close()
     
@@ -2256,11 +2324,21 @@ def get_kid_permissions():
                 'kid_allowed_view_history': bool(row.get('can_view_history')),
             })
 
-        # Fallback to settings table if roles row not present
+        # Fallback to tenant-scoped settings if roles row not present
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s, %s, %s)', (
-            'kid_allowed_record_chore', 'kid_allowed_redeem_points', 'kid_allowed_withdraw_cash', 'kid_allowed_view_history'))
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'kid_allowed_record_chore': False,
+                'kid_allowed_redeem_points': False,
+                'kid_allowed_withdraw_cash': False,
+                'kid_allowed_view_history': False,
+            })
+        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s)', (
+            tenant_id, 'kid_allowed_record_chore', 'kid_allowed_redeem_points', 'kid_allowed_withdraw_cash', 'kid_allowed_view_history'))
         settings = {r['setting_key']: r['setting_value'] for r in cursor.fetchall()}
         cursor.close()
         conn.close()
@@ -2415,9 +2493,13 @@ def manual_daily_cash_out():
 def reset_points():
     """Reset all users' points balances to 0."""
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE family_members SET balance = 0')
+        cursor.execute('UPDATE tenant_users SET balance = 0 WHERE tenant_id = %s', (tenant_id,))
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -2448,9 +2530,13 @@ def reset_points():
 def reset_cash():
     """Reset all users' cash balances to 0."""
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE cash_balances SET cash_balance = 0.0')
+        cursor.execute('UPDATE tenant_cash_balances SET cash_balance = 0.0 WHERE tenant_id = %s', (tenant_id,))
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -2481,14 +2567,18 @@ def reset_cash():
 def reset_transactions():
     """Delete all transactions from the database."""
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         conn = get_db_connection()
         cursor = conn.cursor()
         # Get count before deletion for logging
-        cursor.execute('SELECT COUNT(*) as total FROM transactions')
+        cursor.execute('SELECT COUNT(*) as total FROM tenant_transactions WHERE tenant_id = %s', (tenant_id,))
         count_result = cursor.fetchone()
         total_transactions = count_result[0] if count_result else 0
-        
-        cursor.execute('DELETE FROM transactions')
+
+        cursor.execute('DELETE FROM tenant_transactions WHERE tenant_id = %s', (tenant_id,))
         conn.commit()
         cursor.close()
         conn.close()
@@ -2526,10 +2616,15 @@ def send_email(to_email, subject, body_html, body_text=None):
         tuple: (success: bool, message: str) - success indicates if email was sent, message contains status or error
     """
     try:
-        # Get email settings from database
+        # Get tenant-scoped email settings from database
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE %s', ('email_%',))
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return False, 'Tenant context required'
+        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
         settings = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -2618,10 +2713,15 @@ def send_test_email():
     # Get parent email addresses from request
     parent_emails = data.get('parent_email_addresses', [])
     
-    # Get email settings from database
+    # Get tenant-scoped email settings from database
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s)', ('email_username', 'parent_email_addresses'))
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Tenant context required'}), 400
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', (tenant_id, 'email_username', 'parent_email_addresses'))
     settings = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -2739,16 +2839,20 @@ def withdraw_cash():
     except (ValueError, TypeError):
         return jsonify({'error': 'Amount must be a number'}), 400
     
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Check user exists and get cash balance
+
+    # Check user exists and get cash balance (tenant-scoped)
     cursor.execute('''
         SELECT u.user_id, COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM family_members u
-        LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
-        WHERE u.user_id = %s
-    ''', (data['user_id'],))
+        FROM tenant_users u
+        LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
+        WHERE u.user_id = %s AND u.tenant_id = %s
+    ''', (data['user_id'], tenant_id))
     user = cursor.fetchone()
     
     if not user:
@@ -2762,33 +2866,32 @@ def withdraw_cash():
         conn.close()
         return jsonify({'error': f'Insufficient cash balance. User has ${current_cash:.2f}.'}), 400
     
-    # Ensure cash_balance record exists
+    # Ensure cash_balance record exists (tenant-scoped)
     cursor.execute('''
-        INSERT INTO cash_balances (user_id, cash_balance) 
-        VALUES (%s, 0.0)
-        ON CONFLICT (user_id) DO NOTHING
-    ''', (data['user_id'],))
-    
+        INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) 
+        VALUES (%s, %s, 0.0)
+        ON CONFLICT (tenant_id, user_id) DO NOTHING
+    ''', (tenant_id, data['user_id']))
+
     # Update cash_balance (subtract amount)
     cursor.execute('''
-        UPDATE cash_balances 
+        UPDATE tenant_cash_balances 
         SET cash_balance = cash_balance - %s 
-        WHERE user_id = %s
-    ''', (float(amount), data['user_id']))
-    
-    # Create transaction record for the withdrawal
-    # Store amount as negative value in transactions table (for consistency with redemptions)
-    # Store timestamp in system timezone
+        WHERE user_id = %s AND tenant_id = %s
+    ''', (float(amount), data['user_id'], tenant_id))
+
+    # Create transaction record for the withdrawal (tenant-scoped)
+    # Store amount as negative value in tenant_transactions table
     cursor.execute('''
-        INSERT INTO transactions (user_id, description, value, transaction_type, timestamp)
-        VALUES (%s, NULL, %s, 'cash_withdrawal', %s)
+        INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
+        VALUES (%s, %s, NULL, %s, 'cash_withdrawal', %s)
         RETURNING transaction_id
-    ''', (data['user_id'], -amount, get_system_timestamp()))
+    ''', (tenant_id, data['user_id'], -amount, get_system_timestamp()))
     result = cursor.fetchone()
     transaction_id = result['transaction_id'] if result else None
-    
-    # Get user name for email notification
-    cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+
+    # Get user name for email notification (tenant-scoped)
+    cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
     user_result = cursor.fetchone()
     user_name = user_result.get('full_name') if user_result else 'Unknown User'
     
@@ -2817,16 +2920,24 @@ def get_setting(key, default):
     """Get a setting value from the database."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', (key,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    
-    if result:
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    result = None
+    try:
+        if tenant_id:
+            cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, key))
+            result = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+    if result and result.get('setting_value') is not None:
         if key == 'automatic_daily_cash_out':
             return result.get('setting_value') == '1'
         elif key == 'max_rollover_points':
-            return int(result.get('setting_value'))
+            try:
+                return int(result.get('setting_value'))
+            except Exception:
+                return default
         elif key == 'daily_cash_out_time':
             return result.get('setting_value', default)
         return result.get('setting_value')
@@ -2844,14 +2955,15 @@ def process_daily_cash_out(triggered_manually=False):
     automatic_cash_out = get_setting('automatic_daily_cash_out', True)
     max_rollover = get_setting('max_rollover_points', 4)
     
-    # Get all users
-    cursor.execute('SELECT user_id, balance FROM family_members')
+    # Get all users (tenant-scoped rows include tenant_id)
+    cursor.execute('SELECT tenant_id, user_id, balance FROM tenant_users')
     users = cursor.fetchall()
-    
+
     for user in users:
+        tenant_id_row = user.get('tenant_id')
         user_id = user.get('user_id')
         balance = user.get('balance') or 0
-        
+
         if automatic_cash_out:
             # Convert (balance - max_rollover) to cash, keep max_rollover points
             if balance > max_rollover:
@@ -2860,42 +2972,42 @@ def process_daily_cash_out(triggered_manually=False):
                 remainder = balance % 5
                 rollover = min(max_rollover, remainder)
                 
-                # Ensure cash_balance record exists
+                # Ensure cash_balance record exists (tenant-scoped)
                 cursor.execute('''
-                    INSERT INTO cash_balances (user_id, cash_balance) 
-                    VALUES (%s, 0.0)
-                    ON CONFLICT (user_id) DO NOTHING
-                ''', (user_id,))
+                    INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) 
+                    VALUES (%s, %s, 0.0)
+                    ON CONFLICT (tenant_id, user_id) DO NOTHING
+                ''', (tenant_id_row, user_id))
                 
                 # Update cash_balance
                 cursor.execute('''
-                    UPDATE cash_balances 
+                    UPDATE tenant_cash_balances 
                     SET cash_balance = cash_balance + %s 
-                    WHERE user_id = %s
-                ''', (cash_amount, user_id))
+                    WHERE user_id = %s AND tenant_id = %s
+                ''', (cash_amount, user_id, tenant_id_row))
                 
-                # Update point balance to max_rollover
+                # Update point balance to max_rollover (tenant-scoped)
                 cursor.execute('''
-                    UPDATE family_members 
+                    UPDATE tenant_users 
                     SET balance = %s 
-                    WHERE user_id = %s
-                ''', (rollover, user_id))
+                    WHERE user_id = %s AND tenant_id = %s
+                ''', (rollover, user_id, tenant_id_row))
                 
-                # Create transaction record for the conversion
+                # Create transaction record for the conversion (tenant-scoped)
                 # Store timestamp in system timezone
                 description = f'Daily cash out: Redeemed {points_to_convert} points for ${cash_amount:.2f}'
                 cursor.execute('''
-                    INSERT INTO transactions (user_id, description, value, transaction_type, timestamp)
-                    VALUES (%s, %s, %s, 'points_redemption', %s)
-                ''', (user_id, description, -points_to_convert, get_system_timestamp()))
+                    INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
+                    VALUES (%s, %s, %s, %s, 'points_redemption', %s)
+                ''', (tenant_id_row, user_id, description, -points_to_convert, get_system_timestamp()))
         else:
-            # Just cap the balance at max_rollover if it exceeds it
+            # Just cap the balance at max_rollover if it exceeds it (tenant-scoped)
             if balance > max_rollover:
                 cursor.execute('''
-                    UPDATE family_members 
+                    UPDATE tenant_users 
                     SET balance = %s 
-                    WHERE user_id = %s
-                ''', (max_rollover, user_id))
+                    WHERE user_id = %s AND tenant_id = %s
+                ''', (max_rollover, user_id, tenant_id_row))
     
     conn.commit()
     cursor.close()
@@ -2918,7 +3030,12 @@ def get_last_daily_cash_out_date():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', ('last_daily_cash_out_date',))
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return None
+        cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, 'last_daily_cash_out_date'))
         result = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -2959,6 +3076,10 @@ def record_chore():
         return jsonify({'error': 'user_id is required'}), 400
     chore_id = data.get('chore_id')
 
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -2967,8 +3088,8 @@ def record_chore():
 
     try:
         if chore_id:
-            # Lookup stored chore (schema uses `chore` and `point_value`)
-            cursor.execute('SELECT chore, point_value FROM chores WHERE chore_id = %s', (chore_id,))
+            # Lookup stored chore (tenant-scoped)
+            cursor.execute('SELECT chore, point_value FROM tenant_chores WHERE chore_id = %s AND tenant_id = %s', (chore_id, tenant_id))
             chore = cursor.fetchone()
             if not chore:
                 cursor.close()
@@ -2992,19 +3113,19 @@ def record_chore():
             conn.close()
             return jsonify({'error': 'Points must be greater than 0'}), 400
 
-        # Insert transaction and update balance
+        # Insert transaction and update balance (tenant-scoped)
         timestamp = get_system_timestamp()
         cursor.execute(
-            'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
-            (data['user_id'], description, points, 'chore_completed', timestamp)
+            'INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s, %s) RETURNING transaction_id',
+            (tenant_id, data['user_id'], description, points, 'chore_completed', timestamp)
         )
         res = cursor.fetchone()
         transaction_id = res['transaction_id'] if res else None
 
-        cursor.execute('UPDATE family_members SET balance = balance + %s WHERE user_id = %s', (points, data['user_id']))
+        cursor.execute('UPDATE tenant_users SET balance = balance + %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
 
-        # Get user name for notification/logging
-        cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+        # Get user name for notification/logging (tenant-scoped)
+        cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
         user_result = cursor.fetchone()
         user_name = user_result.get('full_name') if user_result else 'Unknown User'
 
@@ -3059,12 +3180,16 @@ def redeem_points():
     redemption_type = data.get('redemption_type')  # e.g. 'money' or other
     description = data.get('description') or (f'Redemed {points} points' + (f' for {redemption_type}' if redemption_type else ''))
 
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        # Verify user balance
-        cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (data['user_id'],))
+        # Verify user balance (tenant-scoped)
+        cursor.execute('SELECT balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
         user_row = cursor.fetchone()
         if not user_row:
             cursor.close()
@@ -3084,24 +3209,24 @@ def redeem_points():
                 conn.close()
                 return jsonify({'error': 'Points must be a multiple of 5 to redeem for money (5 points = $1)'}), 400
             cash_amount = points // 5
-            # Ensure cash_balance record exists
-            cursor.execute('INSERT INTO cash_balances (user_id, cash_balance) VALUES (%s, 0.0) ON CONFLICT (user_id) DO NOTHING', (data['user_id'],))
-            cursor.execute('UPDATE cash_balances SET cash_balance = cash_balance + %s WHERE user_id = %s', (float(cash_amount), data['user_id']))
+            # Ensure cash_balance record exists (tenant-scoped)
+            cursor.execute('INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) VALUES (%s, %s, 0.0) ON CONFLICT (tenant_id, user_id) DO NOTHING', (tenant_id, data['user_id']))
+            cursor.execute('UPDATE tenant_cash_balances SET cash_balance = cash_balance + %s WHERE user_id = %s AND tenant_id = %s', (float(cash_amount), data['user_id'], tenant_id))
 
         # Insert transaction (store negative points)
         timestamp = get_system_timestamp()
         cursor.execute(
-            'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
-            (data['user_id'], description, -points, 'points_redemption', timestamp)
+            'INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s, %s) RETURNING transaction_id',
+            (tenant_id, data['user_id'], description, -points, 'points_redemption', timestamp)
         )
         res = cursor.fetchone()
         transaction_id = res['transaction_id'] if res else None
 
-        # Subtract points from user balance
-        cursor.execute('UPDATE family_members SET balance = balance - %s WHERE user_id = %s', (points, data['user_id']))
+        # Subtract points from user balance (tenant-scoped)
+        cursor.execute('UPDATE tenant_users SET balance = balance - %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
 
         # Get user name for notification/logging
-        cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+        cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
         user_result = cursor.fetchone()
         user_name = user_result.get('full_name') if user_result else 'Unknown User'
 
@@ -3144,11 +3269,16 @@ def send_daily_digest_email(force=False):
     if not force and not get_email_notification_setting('email_notify_daily_digest'):
         return
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            if force:
+                raise ValueError('No tenant context for daily digest')
+            return
         # Get parent email addresses
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s, %s, %s, %s, %s)', 
-                      ('parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
+        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s, %s, %s)', 
+                  (tenant_id, 'parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
         results = cursor.fetchall()
         settings_dict = {row['setting_key']: row['setting_value'] for row in results}
         
@@ -3174,7 +3304,7 @@ def send_daily_digest_email(force=False):
         yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
         yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
         
-        # Get all transactions for yesterday
+        # Get all transactions for yesterday (tenant-scoped)
         cursor.execute('''
             SELECT 
                 t.transaction_id,
@@ -3184,24 +3314,25 @@ def send_daily_digest_email(force=False):
                 t.transaction_type,
                 t.timestamp,
                 u.full_name as user_name
-            FROM transactions t
-            LEFT JOIN family_members u ON t.user_id = u.user_id
-            WHERE t.timestamp >= %s AND t.timestamp <= %s
+            FROM tenant_transactions t
+            LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
+            WHERE t.tenant_id = %s AND t.timestamp >= %s AND t.timestamp <= %s
             ORDER BY t.timestamp DESC
-        ''', (yesterday_start, yesterday_end))
+        ''', (tenant_id, yesterday_start, yesterday_end))
         transactions = cursor.fetchall()
-        
-        # Get all users with their current balances
+
+        # Get all users with their current balances (tenant-scoped)
         cursor.execute('''
             SELECT 
                 u.user_id,
                 u.full_name,
                 u.balance as point_balance,
                 COALESCE(cb.cash_balance, 0.0) as cash_balance
-            FROM family_members u
-            LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
+            FROM tenant_users u
+            LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
+            WHERE u.tenant_id = %s
             ORDER BY u.user_id
-        ''')
+        ''', (tenant_id,))
         users = cursor.fetchall()
         
         cursor.close()
