@@ -89,6 +89,7 @@ The application will be available at `http://localhost:8000` (or at the specifie
 - `POSTGRES_USER` - Database user (default: `family_chores`)
 - `POSTGRES_PASSWORD` - Database password (default: `family_chores`)
 - `PARENT_PIN` - PIN required for Parent login (default: `1234`)
+- `PARENT_PIN` - PIN required for Parent login (default: `1234`). The application now prefers an encrypted `parent_pin` value stored in the `settings` table (if present) and will fall back to this environment variable only when no DB value exists or a DB read fails. Use the Settings page to update the Parent PIN (enter exactly 4 digits or leave empty to keep the existing value). Stored PINs are encrypted in the database for security.
 - `TZ` - Set to your local timezone (default: `America/Denver`)
 - `LOG_LEVEL` - Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`)
 - `ACCESS_TOKEN_EXPIRES` - Access token lifetime in seconds (default: `900` (15 minutes))

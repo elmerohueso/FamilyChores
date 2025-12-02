@@ -30,7 +30,7 @@
                             4-digit PIN used for parent login. Leave empty to keep existing.
                         </div>
                         <div class="input-group" style="margin-top: 12px;">
-                            <input type="text" id="parentPin" class="form-input" placeholder="Leave empty to keep existing" maxlength="4" pattern="\\d{4}" inputmode="numeric" style="width: 140px;">
+                            <input type="tel" id="parentPin" class="form-input" minlength="4" maxlength="4" pattern="\d{4}" title="Enter exactly 4 digits (leave empty to keep existing)" inputmode="numeric" style="width: 140px;">
                         </div>
                     </div>
                     <div class="setting-item">
@@ -505,6 +505,9 @@
 
                 if (response.ok) {
                     showToast('Settings saved successfully!');
+                    // Clear sensitive inputs after a successful save
+                    const parentPinEl = document.getElementById('parentPin');
+                    if (parentPinEl) parentPinEl.value = '';
                 } else {
                     showToast(result.error || 'Error saving settings', true);
                 }
