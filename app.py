@@ -249,8 +249,8 @@ def parent_required(f):
     def decorated_function(*args, **kwargs):
         user_role = session.get('user_role')
         if user_role != 'parent':
-            # Redirect to index if not parent
-            return redirect(url_for('dashboard'))
+            # Redirect to index (login) if not parent
+            return redirect(url_for('index'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -260,8 +260,8 @@ def kid_or_parent_required(f):
     def decorated_function(*args, **kwargs):
         user_role = session.get('user_role')
         if user_role not in ['kid', 'parent']:
-            # Redirect to index if no role set
-            return redirect(url_for('dashboard'))
+            # Redirect to index (login) if no role set
+            return redirect(url_for('index'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -290,7 +290,7 @@ def kid_permission_required(permission_key):
                 col = perm_map.get(permission_key)
                 if not col:
                     # Unknown permission key - deny access by default
-                    return redirect(url_for('dashboard'))
+                    return redirect(url_for('index'))
 
                 conn = get_db_connection()
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -304,11 +304,11 @@ def kid_permission_required(permission_key):
                 if row and row.get(col):
                     return f(*args, **kwargs)
                 else:
-                    # Permission not allowed - redirect to index
-                    return redirect(url_for('dashboard'))
+                    # Permission not allowed - redirect to index (login)
+                    return redirect(url_for('index'))
             
-            # No role set - redirect to index
-            return redirect(url_for('dashboard'))
+            # No role set - redirect to index (login)
+            return redirect(url_for('index'))
         return decorated_function
     return decorator
 
@@ -761,6 +761,7 @@ def withdraw_cash_page():
 
 # Chores endpoints
 @app.route('/api/chores', methods=['GET'])
+@kid_or_parent_required
 def get_chores():
     """Get all chores. All chores are visible, but those with requires_approval=True are greyed out for kids."""
     conn = get_db_connection()
@@ -1143,6 +1144,7 @@ def import_chores():
 
 # User endpoints
 @app.route('/api/users', methods=['GET'])
+@kid_or_parent_required
 def get_users():
     """Get all users with their cash balances."""
     conn = get_db_connection()
@@ -1164,6 +1166,7 @@ def get_users():
     return jsonify([dict(user) for user in users])
 
 @app.route('/api/users/<int:user_id>/avatar', methods=['POST'])
+@kid_or_parent_required
 def upload_avatar(user_id):
     """Upload avatar for a user."""
     if 'avatar' not in request.files:
@@ -1359,6 +1362,7 @@ def delete_user(user_id):
 
 # Transactions endpoints
 @app.route('/api/transactions', methods=['GET'])
+@kid_or_parent_required
 def get_transactions():
     """Get all transactions with user and chore names."""
     conn = get_db_connection()
@@ -1572,6 +1576,7 @@ def settings_page():
     return render_template('settings.html')
 
 @app.route('/api/settings', methods=['GET'])
+@parent_required
 def get_settings():
     """Get all settings."""
     conn = get_db_connection()
@@ -1964,6 +1969,7 @@ def update_settings():
 
 # Kid permissions endpoints
 @app.route('/api/kid-permissions', methods=['GET'])
+@kid_or_parent_required
 def get_kid_permissions():
     """Return kid role permissions.
 
@@ -2449,7 +2455,7 @@ def send_daily_digest_manual():
         return jsonify({'error': f'Error sending daily digest: {error_msg}'}), 500
 
 @app.route('/api/withdraw-cash', methods=['POST'])
-@kid_permission_required('can_withdraw_cash')
+@kid_permission_required('kid_allowed_withdraw_cash')
 def withdraw_cash():
     """Withdraw cash from a user's cash balance."""
     data = request.get_json()

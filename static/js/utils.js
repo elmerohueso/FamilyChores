@@ -59,8 +59,8 @@ async function checkRoleOnLoad() {
         // Server reports no role — clear in-memory role and redirect off protected pages
         setLocalRole(null);
         const pathname = window.location.pathname || '/';
-        if (pathname !== '/') {
-            window.location.replace('/');
+        if (pathname !== '/dashboard') {
+            window.location.replace('/dashboard');
         }
     } catch (err) {
         console.error('Error checking role on load:', err);
