@@ -9,6 +9,20 @@ and does not include migration logic.
 import os
 import psycopg2
 
+try:
+    from argon2 import PasswordHasher
+    _ph = PasswordHasher()
+except Exception:
+    _ph = None
+
+try:
+    import base64
+    import hashlib
+    from cryptography.fernet import Fernet
+    _fernet_available = True
+except Exception:
+    _fernet_available = False
+
 # Database connection configuration from environment variables
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
 POSTGRES_DATABASE = os.environ.get('POSTGRES_DATABASE', 'family_chores')
@@ -18,6 +32,117 @@ POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432')
 
 # Construct database connection string
 DATABASE_URL = f'postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DATABASE}'
+
+
+def create_tenants_table(cursor):
+    """Create the `tenants` table if it does not exist."""
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tenants (
+            tenant_id SERIAL PRIMARY KEY,
+            tenant_name VARCHAR(255) NOT NULL UNIQUE,
+            tenant_password VARCHAR(1000) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+
+def create_tenant_settings_table(cursor):
+    """Create the `tenant_settings` table if it does not exist.
+
+    This table is tenant-scoped and uses a composite primary key
+    (tenant_id, setting_key) so the application can `ON CONFLICT` update
+    tenant-scoped settings.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_settings (
+            tenant_id INTEGER NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            setting_key VARCHAR(100) NOT NULL,
+            setting_value TEXT,
+            PRIMARY KEY (tenant_id, setting_key)
+        )
+    """)
+
+
+def create_refresh_tokens_table(cursor):
+    """Create the `refresh_tokens` table if it does not exist.
+
+    The application stores a SHA256 hash of the token in `token_hash` and
+    records issuance/expiry and optional metadata.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS refresh_tokens (
+            id SERIAL PRIMARY KEY,
+            tenant_id INTEGER NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            token_hash VARCHAR(255) NOT NULL,
+            issued_at TIMESTAMP,
+            expires_at TIMESTAMP,
+            revoked BOOLEAN DEFAULT FALSE,
+            user_agent VARCHAR(1000),
+            ip_address VARCHAR(100)
+        )
+    """)
+
+
+def create_default_admin_if_missing(cursor):
+    """Insert a default Administrator tenant with password 'ChangeMe!' if no Administrator exists.
+
+    Uses Argon2 to hash the password so the application will accept the credential format.
+    If Argon2 is not available, this function will skip creating the default tenant and
+    print a warning.
+    """
+    admin_name = 'Administrator'
+    admin_password = 'ChangeMe!'
+    if _ph is None:
+        print('Warning: argon2 PasswordHasher not available; skipping default tenant creation')
+        return
+
+    # Find existing tenant (case-insensitive)
+    cursor.execute("SELECT tenant_id FROM tenants WHERE LOWER(tenant_name) = LOWER(%s)", (admin_name,))
+    row = cursor.fetchone()
+    tenant_id = None
+    if row:
+        tenant_id = row[0]
+    else:
+        # Create tenant if possible
+        if _ph is None:
+            print('Warning: argon2 PasswordHasher not available; skipping default tenant creation')
+            return
+        try:
+            hashed = _ph.hash(admin_password)
+            cursor.execute(
+                "INSERT INTO tenants (tenant_name, tenant_password) VALUES (%s, %s) RETURNING tenant_id",
+                (admin_name, hashed)
+            )
+            tenant_id = cursor.fetchone()[0]
+        except Exception as e:
+            print(f'Failed to create default Administrator tenant: {e}')
+            return
+
+    # At this point we have a tenant_id; insert or update the parent_pin in tenant_settings
+    encrypted_pin = None
+    pin_value = '1234'
+    if _fernet_available:
+        try:
+            secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+            key = hashlib.sha256(secret_key.encode('utf-8')).digest()
+            fernet_key = base64.urlsafe_b64encode(key)
+            f = Fernet(fernet_key)
+            encrypted_pin = f.encrypt(pin_value.encode('utf-8')).decode('utf-8')
+        except Exception as e:
+            print(f'Warning: failed to encrypt parent_pin, storing plaintext: {e}')
+            encrypted_pin = pin_value
+    else:
+        print('Warning: cryptography.fernet not available; storing parent_pin as plaintext')
+        encrypted_pin = pin_value
+
+    try:
+        cursor.execute('''
+            INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        ''', (tenant_id, 'parent_pin', encrypted_pin))
+    except Exception as e:
+        print(f'Failed to upsert parent_pin for Administrator tenant: {e}')
 
 
 def init_database():
@@ -90,6 +215,14 @@ def init_database():
                 ip_address VARCHAR(50)
             )
         """)
+
+        # Create tenants and related tables via helper functions
+        create_tenants_table(cursor)
+        create_tenant_settings_table(cursor)
+        create_refresh_tokens_table(cursor)
+
+        # Ensure a default Administrator tenant exists when the tenants table is new/empty
+        create_default_admin_if_missing(cursor)
 
         conn.commit()
     finally:
