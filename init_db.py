@@ -110,6 +110,23 @@ def create_tenant_chores_table(cursor):
     """)
 
 
+def create_tenant_users_table(cursor):
+    """Create tenant-scoped users table with the same columns as `user` plus `tenant_id`.
+
+    Columns mirror the global `user` table but include a `tenant_id` UUID
+    foreign key so each tenant can have its own users.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_users (
+            user_id SERIAL PRIMARY KEY,
+            tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            full_name VARCHAR(255) NOT NULL,
+            balance INTEGER DEFAULT 0,
+            avatar_path VARCHAR(500)
+        )
+    """)
+
+
 def create_default_admin_if_missing(cursor):
     """Insert a default Administrator tenant with password 'ChangeMe!' if no Administrator exists.
 
@@ -160,11 +177,6 @@ def create_default_admin_if_missing(cursor):
                     ''', (tenant_id, sk, sv))
                 except Exception as e:
                     print(f'Warning: failed to migrate setting {sk}: {e}')
-            # Drop the global settings table now that values have been migrated
-            try:
-                cursor.execute('DROP TABLE IF EXISTS settings')
-            except Exception as e:
-                print(f'Warning: failed to drop settings table after migration: {e}')
     except Exception:
         # If settings table doesn't exist or migration fails, continue gracefully
         pass
@@ -182,13 +194,27 @@ def create_default_admin_if_missing(cursor):
                     ''', (tenant_id, chore, pv, rpt, last_completed, req_appr))
                 except Exception as e:
                     print(f'Warning: failed to migrate chore "{chore}": {e}')
-            # Drop the global chores table now that values have been migrated
-            try:
-                cursor.execute('DROP TABLE IF EXISTS chores')
-            except Exception as e:
-                print(f'Warning: failed to drop chores table after migration: {e}')
+
     except Exception:
         # If chores table doesn't exist or migration fails, continue gracefully
+        pass
+
+    # Migrate global `user` rows into `tenant_users` for this Administrator tenant
+    try:
+        cursor.execute('SELECT full_name, balance, avatar_path FROM "user"')
+        all_users = cursor.fetchall()
+        if all_users:
+            for full_name, balance, avatar_path in all_users:
+                try:
+                    cursor.execute('''
+                        INSERT INTO tenant_users (tenant_id, full_name, balance, avatar_path)
+                        VALUES (%s, %s, %s, %s)
+                    ''', (tenant_id, full_name, balance, avatar_path))
+                except Exception as e:
+                    print(f'Warning: failed to migrate user "{full_name}": {e}')
+           
+    except Exception:
+        # If "user" table doesn't exist or migration fails, continue gracefully
         pass
 
     encrypted_pin = None
@@ -293,6 +319,7 @@ def init_database():
         create_tenant_settings_table(cursor)
         create_refresh_tokens_table(cursor)
         create_tenant_chores_table(cursor)
+        create_tenant_users_table(cursor)
 
         # Ensure a default Administrator tenant exists when the tenants table is new/empty
         create_default_admin_if_missing(cursor)
