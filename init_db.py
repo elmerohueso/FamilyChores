@@ -119,6 +119,29 @@ def create_default_admin_if_missing(cursor):
             return
 
     # At this point we have a tenant_id; insert or update the parent_pin in tenant_settings
+    # Migrate any existing global `settings` into tenant_settings for this Administrator
+    try:
+        cursor.execute("SELECT setting_key, setting_value FROM settings")
+        all_settings = cursor.fetchall()
+        if all_settings:
+            for sk, sv in all_settings:
+                try:
+                    cursor.execute('''
+                        INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+                    ''', (tenant_id, sk, sv))
+                except Exception as e:
+                    print(f'Warning: failed to migrate setting {sk}: {e}')
+            # Drop the global settings table now that values have been migrated
+            try:
+                cursor.execute('DROP TABLE IF EXISTS settings')
+            except Exception as e:
+                print(f'Warning: failed to drop settings table after migration: {e}')
+    except Exception:
+        # If settings table doesn't exist or migration fails, continue gracefully
+        pass
+
     encrypted_pin = None
     pin_value = '1234'
     if _fernet_available:
