@@ -127,6 +127,21 @@ def create_tenant_users_table(cursor):
     """)
 
 
+def create_tenant_cash_balances_table(cursor):
+    """Create tenant-scoped cash balances table mirroring `cash_balances` plus `tenant_id`.
+
+    Uses a composite primary key (tenant_id, user_id) and references `tenant_users(user_id)`.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_cash_balances (
+            tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES tenant_users(user_id) ON DELETE CASCADE,
+            cash_balance DOUBLE PRECISION DEFAULT 0.0,
+            PRIMARY KEY (tenant_id, user_id)
+        )
+    """)
+
+
 def create_default_admin_if_missing(cursor):
     """Insert a default Administrator tenant with password 'ChangeMe!' if no Administrator exists.
 
@@ -200,21 +215,48 @@ def create_default_admin_if_missing(cursor):
         pass
 
     # Migrate global `user` rows into `tenant_users` for this Administrator tenant
+    # Preserve original `user_id` values so other tables can be migrated reliably.
     try:
-        cursor.execute('SELECT full_name, balance, avatar_path FROM "user"')
+        cursor.execute('SELECT user_id, full_name, balance, avatar_path FROM "user"')
         all_users = cursor.fetchall()
         if all_users:
-            for full_name, balance, avatar_path in all_users:
+            for old_user_id, full_name, balance, avatar_path in all_users:
                 try:
                     cursor.execute('''
-                        INSERT INTO tenant_users (tenant_id, full_name, balance, avatar_path)
-                        VALUES (%s, %s, %s, %s)
-                    ''', (tenant_id, full_name, balance, avatar_path))
+                        INSERT INTO tenant_users (user_id, tenant_id, full_name, balance, avatar_path)
+                        VALUES (%s, %s, %s, %s, %s)
+                    ''', (old_user_id, tenant_id, full_name, balance, avatar_path))
                 except Exception as e:
-                    print(f'Warning: failed to migrate user "{full_name}": {e}')
-           
+                    print(f'Warning: failed to migrate user "{full_name}" (id={old_user_id}): {e}')
+            # Attempt to advance the tenant_users sequence to avoid future conflicts
+            try:
+                cursor.execute("SELECT MAX(user_id) FROM tenant_users")
+                max_id = cursor.fetchone()[0]
+                if max_id:
+                    cursor.execute("SELECT setval(pg_get_serial_sequence('tenant_users', 'user_id'), %s, true)", (max_id,))
+            except Exception:
+                pass
     except Exception:
         # If "user" table doesn't exist or migration fails, continue gracefully
+        pass
+
+    # Migrate global `cash_balances` into `tenant_cash_balances` for this Administrator tenant
+    # Do not drop the original `cash_balances` table.
+    try:
+        cursor.execute('SELECT user_id, cash_balance FROM cash_balances')
+        all_balances = cursor.fetchall()
+        if all_balances:
+            for uid, cb in all_balances:
+                try:
+                    # Insert only if tenant_users contains this user_id (preserved above)
+                    cursor.execute('''
+                        INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance)
+                        VALUES (%s, %s, %s)
+                    ''', (tenant_id, uid, cb))
+                except Exception as e:
+                    print(f'Warning: failed to migrate cash balance for user_id={uid}: {e}')
+    except Exception:
+        # If cash_balances doesn't exist or migration fails, continue gracefully
         pass
 
     encrypted_pin = None
@@ -320,6 +362,7 @@ def init_database():
         create_refresh_tokens_table(cursor)
         create_tenant_chores_table(cursor)
         create_tenant_users_table(cursor)
+        create_tenant_cash_balances_table(cursor)
 
         # Ensure a default Administrator tenant exists when the tenants table is new/empty
         create_default_admin_if_missing(cursor)
