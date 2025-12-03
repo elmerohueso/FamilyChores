@@ -183,7 +183,8 @@ def create_tenant_roles_table(cursor):
 
 
 def create_default_admin_if_missing(cursor):
-    """Insert a default Administrator tenant with password 'ChangeMe!' if no Administrator exists.
+    """Inserts the first tenant. This also migrates any existing
+    global data into the new tenant-scoped tables and associates it to that tenant.
 
     Uses Argon2 to hash the password so the application will accept the credential format.
     If Argon2 is not available, this function will skip creating the default tenant and
@@ -548,8 +549,11 @@ def init_database():
         create_tenant_transactions_table(cursor)
         create_tenant_roles_table(cursor)
 
-        # Ensure a default Administrator tenant exists when the tenants table is new/empty
-        create_default_admin_if_missing(cursor)
+        # Create an initial tenant if none exist
+        cursor.execute("SELECT COUNT(*) FROM tenants")
+        tenant_count = cursor.fetchone()[0]
+        if tenant_count == 0:
+            create_default_admin_if_missing(cursor)
 
         conn.commit()
     finally:
