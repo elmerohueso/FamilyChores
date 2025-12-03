@@ -249,7 +249,7 @@ def parent_required(f):
     def decorated_function(*args, **kwargs):
         user_role = session.get('user_role')
         if user_role != 'parent':
-            # Redirect to index if not parent
+            # Redirect to index (login) if not parent
             return redirect(url_for('index'))
         return f(*args, **kwargs)
     return decorated_function
@@ -260,7 +260,7 @@ def kid_or_parent_required(f):
     def decorated_function(*args, **kwargs):
         user_role = session.get('user_role')
         if user_role not in ['kid', 'parent']:
-            # Redirect to index if no role set
+            # Redirect to index (login) if no role set
             return redirect(url_for('index'))
         return f(*args, **kwargs)
     return decorated_function
@@ -295,7 +295,13 @@ def kid_permission_required(permission_key):
                 conn = get_db_connection()
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 try:
-                    cursor.execute(f'SELECT {col} FROM roles WHERE role_name = %s', ('kid',))
+                    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+                    if not tenant_id:
+                        # No tenant context -> deny
+                        cursor.close()
+                        conn.close()
+                        return redirect(url_for('index'))
+                    cursor.execute(f'SELECT {col} FROM tenant_roles WHERE tenant_id = %s AND role_name = %s', (tenant_id, 'kid'))
                     row = cursor.fetchone()
                 finally:
                     cursor.close()
@@ -304,10 +310,10 @@ def kid_permission_required(permission_key):
                 if row and row.get(col):
                     return f(*args, **kwargs)
                 else:
-                    # Permission not allowed - redirect to index
+                    # Permission not allowed - redirect to index (login)
                     return redirect(url_for('index'))
             
-            # No role set - redirect to index
+            # No role set - redirect to index (login)
             return redirect(url_for('index'))
         return decorated_function
     return decorator
@@ -317,6 +323,8 @@ def kid_permission_required(permission_key):
 @app.route('/')
 def index():
     """Home page."""
+    # Show the public landing / login page at the root so tenants
+    # who are not logged in (no token) are directed to `index.html`.
     return render_template('index.html')
 
 
@@ -336,9 +344,11 @@ def require_auth_for_everything():
         '/api/tenant-login',
         '/api/auth/refresh',
         '/api/auth/logout',
+        '/api/tenants',
         # Allow a few read-only endpoints used by head/includes and utils
         '/api/version',
         '/api/system-time',
+        '/api/tz-info',
         '/api/get-role',
     ])
 
@@ -389,8 +399,47 @@ def validate_pin():
     """Validate parent PIN."""
     data = request.get_json()
     pin = data.get('pin', '')
-    
-    if pin == PARENT_PIN:
+    # Prefer parent PIN stored in the settings table when available.
+    db_pin = None
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        # Try tenant-scoped parent PIN first
+        if tenant_id:
+            try:
+                cur.execute("SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s", (tenant_id, 'parent_pin'))
+                row = cur.fetchone()
+                if row and row.get('setting_value') is not None:
+                    raw_val = str(row.get('setting_value'))
+                    try_decrypted = decrypt_password(raw_val)
+                    if try_decrypted and try_decrypted.isdigit():
+                        db_pin = try_decrypted
+                    elif raw_val.isdigit():
+                        db_pin = raw_val
+            except Exception:
+                # Continue to fallback to global setting or env var
+                db_pin = None
+
+        # Do not fall back to global settings; tenant-scoped only
+        if db_pin is None:
+            db_pin = None
+    except Exception:
+        # Don't fail validation if DB read fails; fall back to env var below
+        db_pin = None
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    effective_pin = db_pin if db_pin else PARENT_PIN
+
+    if pin == effective_pin:
         session['user_role'] = 'parent'
         
         # Log successful parent login
@@ -649,6 +698,204 @@ def api_tenant_login():
     return resp, 200
 
 
+@app.route('/api/tenants', methods=['POST'])
+def api_create_tenant():
+    """Create a new tenant (management API).
+
+    Protection: requires header `X-Tenant-Creation-Key` to match the
+    `TENANT_CREATION_KEY` environment variable. If that env var is not set
+    tenant-creation is disabled.
+
+    Expects JSON: { "tenant_name": "...", "password": "...", "parent_pin": "<4-digit>" }
+    Returns: { "tenant_id": "<uuid>" }
+    """
+    # Management key must be configured in the environment
+    mgmt_key = os.environ.get('TENANT_CREATION_KEY')
+    if not mgmt_key:
+        return jsonify({'error': 'Tenant creation is disabled on this server'}), 403
+
+    provided = request.headers.get('X-Tenant-Creation-Key')
+    if not provided or provided != mgmt_key:
+        try:
+            log_system_event('tenant_create_forbidden', 'Attempt to create tenant without valid management key', None, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': 'Forbidden'}), 403
+
+    # Parse JSON body
+    if not request.is_json:
+        return jsonify({'error': 'Expected JSON body'}), 400
+    data = request.get_json(force=True) or {}
+    tenant_name = (data.get('tenant_name') or '').strip()
+    password = data.get('password') or ''
+    parent_pin = (data.get('parent_pin') or '').strip()
+
+    # Disallow whitespace in tenant name (prevent spaces, tabs, etc.)
+    if any(ch.isspace() for ch in tenant_name):
+        return jsonify({'error': 'tenant_name must not contain spaces or whitespace characters'}), 400
+
+    if not tenant_name or not password or not parent_pin:
+        return jsonify({'error': 'tenant_name, password and parent_pin are required'}), 400
+
+    # parent_pin is required and must be exactly 4 digits
+    if not (len(parent_pin) == 4 and parent_pin.isdigit()):
+        return jsonify({'error': 'parent_pin must be exactly 4 digits'}), 400
+
+    # Ensure Argon2 hasher is available
+    if ph is None:
+        return jsonify({'error': 'Server misconfigured: password hasher unavailable'}), 500
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Prevent duplicate tenant names (case-insensitive)
+        cur.execute("SELECT tenant_id FROM tenants WHERE LOWER(tenant_name) = LOWER(%s)", (tenant_name,))
+        if cur.fetchone():
+            return jsonify({'error': 'Tenant with that name already exists'}), 400
+
+        # Hash password with Argon2
+        hashed = ph.hash(password)
+
+        cur.execute(
+            "INSERT INTO tenants (tenant_name, tenant_password) VALUES (%s, %s) RETURNING tenant_id",
+            (tenant_name, hashed)
+        )
+        tenant_id = cur.fetchone()[0]
+
+        # Encrypt and store the required parent PIN in the tenant-scoped settings table
+        try:
+            encrypted_pin = encrypt_password(parent_pin)
+            cur.execute('''
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, 'parent_pin', encrypted_pin))
+        except Exception:
+            # If storing the PIN fails, rollback and return an error
+            conn.rollback()
+            try:
+                log_system_event('tenant_create_error', 'Failed to store parent PIN during tenant creation', None, 'error')
+            except Exception:
+                pass
+            return jsonify({'error': 'Failed to store parent PIN'}), 500
+
+        # Seed tenant_roles for the new tenant: create a 'kid' role (defaults False)
+        # and a 'parent' role (all permissions True). This is idempotent.
+        try:
+            cur.execute('''
+                INSERT INTO tenant_roles (tenant_id, role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, role_name) DO UPDATE
+                SET can_record_chore = EXCLUDED.can_record_chore,
+                    can_redeem_points = EXCLUDED.can_redeem_points,
+                    can_withdraw_cash = EXCLUDED.can_withdraw_cash,
+                    can_view_history = EXCLUDED.can_view_history
+            ''', (tenant_id, 'kid', False, False, False, False))
+        except Exception:
+            # Non-fatal; continue even if seeding fails
+            pass
+
+        try:
+            cur.execute('''
+                INSERT INTO tenant_roles (tenant_id, role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, role_name) DO UPDATE
+                SET can_record_chore = TRUE,
+                    can_redeem_points = TRUE,
+                    can_withdraw_cash = TRUE,
+                    can_view_history = TRUE
+            ''', (tenant_id, 'parent', True, True, True, True))
+        except Exception:
+            # Non-fatal; continue even if seeding fails
+            pass
+
+        conn.commit()
+
+        try:
+            log_system_event('tenant_created', f'Tenant created: {tenant_name}', {'tenant_id': str(tenant_id)}, 'success')
+        except Exception:
+            pass
+
+        return jsonify({'tenant_id': str(tenant_id)}), 201
+    except Exception as e:
+        error_msg = str(e)
+        conn.rollback()
+        try:
+            log_system_event('tenant_create_error', f'Error creating tenant: {error_msg}', None, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': f'Error creating tenant: {error_msg}'}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route('/api/tenant/password', methods=['POST'])
+def api_change_tenant_password():
+    """Change the authenticated tenant's password.
+
+    Expects JSON: { current_password: <str>, new_password: <str> }
+    Requires authentication (JWT or valid refresh token) so `g.tenant_id` is set.
+    """
+    tenant_id = getattr(g, 'tenant_id', None)
+    if not tenant_id:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    data = request.get_json(silent=True) or {}
+    current = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+
+    if not new_password:
+        return jsonify({'error': 'new_password is required'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute('SELECT tenant_password FROM tenants WHERE tenant_id = %s', (tenant_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'error': 'Tenant not found'}), 404
+
+        stored = row[0]
+        # Only accept Argon2-formatted hashes
+        if not (isinstance(stored, str) and stored.startswith('$argon2')):
+            return jsonify({'error': 'Invalid credential format'}), 500
+
+        try:
+            # Verify current password
+            ph.verify(stored, current)
+        except Exception:
+            return jsonify({'error': 'Current password is incorrect'}), 401
+
+        # Hash and store new password, revoke all refresh tokens for this tenant
+        hashed = ph.hash(new_password)
+        cur.execute('UPDATE tenants SET tenant_password = %s WHERE tenant_id = %s', (hashed, tenant_id))
+        # Revoke any existing refresh tokens so existing sessions must re-auth
+        cur.execute('UPDATE refresh_tokens SET revoked = TRUE WHERE tenant_id = %s', (tenant_id,))
+        conn.commit()
+
+        try:
+            log_system_event('tenant_password_changed', f'Tenant password changed and tokens revoked', {'tenant_id': str(tenant_id)}, 'success')
+        except Exception:
+            pass
+
+        # Return response that also clears the refresh cookie and tenant_id cookie (forces client to re-login)
+        resp = jsonify({'message': 'Password updated'})
+        resp.set_cookie('refresh_token', '', expires=0)
+        resp.set_cookie('tenant_id', '', expires=0)
+        return resp, 200
+    except Exception as e:
+        conn.rollback()
+        try:
+            log_system_event('tenant_password_change_error', f'Error changing tenant password: {e}', None, 'error')
+        except Exception:
+            pass
+        return jsonify({'error': 'Error changing password'}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.route('/api/auth-check', methods=['GET'])
 def api_auth_check():
     """Validate current authentication state.
@@ -716,6 +963,36 @@ def get_system_time():
         'unix_ms': int(now_aware.timestamp() * 1000)  # Unix timestamp in milliseconds
     }), 200
 
+
+@app.route('/api/tz-info', methods=['GET'])
+def get_tz_info():
+    """Return server timezone info.
+
+    JSON fields:
+      - tz_offset_min: integer minutes east of UTC (negative = west)
+      - tz_name: timezone name as returned by datetime.tzname()
+      - timestamp: ISO 8601 timestamp in server local timezone
+    """
+    # Current local time (naive), convert to timezone-aware local
+    now = datetime.now()
+    now_aware = make_timezone_aware(now)
+
+    # Compute offset in minutes (utcoffset returns timedelta or None)
+    offset = now_aware.utcoffset()
+    if offset is None:
+        tz_offset_min = 0
+    else:
+        tz_offset_min = int(offset.total_seconds() / 60)
+
+    tz_name = now_aware.tzname() or ''
+    iso_timestamp = now_aware.isoformat()
+
+    return jsonify({
+        'tz_offset_min': tz_offset_min,
+        'tz_name': tz_name,
+        'timestamp': iso_timestamp
+    }), 200
+
 @app.route('/add-user')
 @parent_required
 def add_user_page():
@@ -759,12 +1036,20 @@ def withdraw_cash_page():
 
 # Chores endpoints
 @app.route('/api/chores', methods=['GET'])
+@kid_or_parent_required
 def get_chores():
     """Get all chores. All chores are visible, but those with requires_approval=True are greyed out for kids."""
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # Return chores ordered by point value, and treats leading underscores as spaces for sorting by chore name
-    cursor.execute('SELECT * FROM chores ORDER BY point_value, REPLACE(chore, \'_\', \' \') ASC')
+    # Return tenant-scoped chores ordered by point value, and treats leading underscores as spaces for sorting by chore name
+    cursor.execute(
+        'SELECT * FROM tenant_chores WHERE tenant_id = %s ORDER BY point_value, REPLACE(chore, \'_\', \' \') ASC',
+        (tenant_id,)
+    )
     chores = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -776,10 +1061,20 @@ def delete_chore(chore_id):
     """Delete a chore without affecting existing transactions."""
     conn = get_db_connection()
     cursor = conn.cursor()
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
     
     try:
         # First, check if chore exists and get chore name for logging
-        cursor.execute('SELECT chore FROM chores WHERE chore_id = %s', (chore_id,))
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
+        cursor.execute('SELECT chore FROM tenant_chores WHERE chore_id = %s AND tenant_id = %s', (chore_id, tenant_id))
         chore_result = cursor.fetchone()
         if not chore_result:
             cursor.close()
@@ -795,7 +1090,7 @@ def delete_chore(chore_id):
         chore_name = chore_result[0]  # Get chore name from result
         
         # Delete the chore (transactions keep their original description)
-        cursor.execute('DELETE FROM chores WHERE chore_id = %s', (chore_id,))
+        cursor.execute('DELETE FROM tenant_chores WHERE chore_id = %s AND tenant_id = %s', (chore_id, tenant_id))
         
         conn.commit()
         cursor.close()
@@ -852,8 +1147,12 @@ def update_chore(chore_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Get current chore values for comparison
-    cursor.execute('SELECT chore, point_value, "repeat", requires_approval FROM chores WHERE chore_id = %s', (chore_id,))
+    # Require tenant context and get current chore values for comparison
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
+    cursor.execute('SELECT chore, point_value, "repeat", requires_approval FROM tenant_chores WHERE chore_id = %s AND tenant_id = %s', (chore_id, tenant_id))
     chore_result = cursor.fetchone()
     if not chore_result:
         cursor.close()
@@ -920,9 +1219,10 @@ def update_chore(chore_id):
             return jsonify({'error': 'No fields to update'}), 400
         
         params.append(chore_id)
-        
+        params.append(tenant_id)
+
         cursor.execute(
-            f'UPDATE chores SET {", ".join(updates)} WHERE chore_id = %s',
+            f'UPDATE tenant_chores SET {", ".join(updates)} WHERE chore_id = %s AND tenant_id = %s',
             params
         )
         
@@ -1019,9 +1319,13 @@ def create_chore():
     cursor = conn.cursor()
     
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         cursor.execute(
-            'INSERT INTO chores (chore, point_value, "repeat", requires_approval) VALUES (%s, %s, %s, %s) RETURNING chore_id',
-            (data['chore'], point_value, repeat_value, requires_approval)
+            'INSERT INTO tenant_chores (tenant_id, chore, point_value, "repeat", requires_approval) VALUES (%s, %s, %s, %s, %s) RETURNING chore_id',
+            (tenant_id, data['chore'], point_value, repeat_value, requires_approval)
         )
         chore_id = cursor.fetchone()[0]
         conn.commit()
@@ -1066,7 +1370,10 @@ def import_chores():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     imported = 0
     errors = 0
     
@@ -1098,8 +1405,8 @@ def import_chores():
                 continue
             
             cursor.execute(
-                'INSERT INTO chores (chore, point_value, "repeat") VALUES (%s, %s, %s)',
-                (chore, point_value, repeat)
+                'INSERT INTO tenant_chores (tenant_id, chore, point_value, "repeat") VALUES (%s, %s, %s, %s)',
+                (tenant_id, chore, point_value, repeat)
             )
             imported += 1
         except Exception as e:
@@ -1141,8 +1448,13 @@ def import_chores():
 
 # User endpoints
 @app.route('/api/users', methods=['GET'])
+@kid_or_parent_required
 def get_users():
     """Get all users with their cash balances."""
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute('''
@@ -1152,16 +1464,18 @@ def get_users():
             u.balance,
             u.avatar_path,
             COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM family_members u
-        LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
+        FROM tenant_users u
+        LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
+        WHERE u.tenant_id = %s
         ORDER BY u.user_id
-    ''')
+    ''', (tenant_id,))
     users = cursor.fetchall()
     cursor.close()
     conn.close()
     return jsonify([dict(user) for user in users])
 
 @app.route('/api/users/<int:user_id>/avatar', methods=['POST'])
+@kid_or_parent_required
 def upload_avatar(user_id):
     """Upload avatar for a user."""
     if 'avatar' not in request.files:
@@ -1181,10 +1495,14 @@ def upload_avatar(user_id):
     if file_size > MAX_AVATAR_SIZE:
         return jsonify({'error': 'File too large. Maximum size is 5MB'}), 400
     
-    # Verify user exists
+    # Verify user exists (tenant-scoped)
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT user_id FROM family_members WHERE user_id = %s', (user_id,))
+    cursor.execute('SELECT user_id FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     user = cursor.fetchone()
     if not user:
         cursor.close()
@@ -1199,8 +1517,8 @@ def upload_avatar(user_id):
     # Save file
     file.save(filepath)
     
-    # Delete old avatar if exists
-    cursor.execute('SELECT avatar_path FROM family_members WHERE user_id = %s', (user_id,))
+    # Delete old avatar if exists (tenant-scoped)
+    cursor.execute('SELECT avatar_path FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     old_avatar = cursor.fetchone()
     if old_avatar and old_avatar.get('avatar_path'):
         old_path = os.path.join(AVATAR_DIR, os.path.basename(old_avatar['avatar_path']))
@@ -1210,14 +1528,14 @@ def upload_avatar(user_id):
             except:
                 pass  # Ignore errors deleting old file
     
-    # Get user name for logging
-    cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (user_id,))
+    # Get user name for logging (tenant-scoped)
+    cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     user_result = cursor.fetchone()
     user_name = user_result.get('full_name') if user_result else f'User {user_id}'
-    
+
     # Update database
     relative_path = os.path.join('avatars', filename)
-    cursor.execute('UPDATE family_members SET avatar_path = %s WHERE user_id = %s', (relative_path, user_id))
+    cursor.execute('UPDATE tenant_users SET avatar_path = %s WHERE user_id = %s AND tenant_id = %s', (relative_path, user_id, tenant_id))
     conn.commit()
     cursor.close()
     conn.close()
@@ -1261,9 +1579,13 @@ def create_user():
     cursor = conn.cursor()
     
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         cursor.execute(
-            'INSERT INTO family_members (full_name, balance) VALUES (%s, %s) RETURNING user_id',
-            (data['full_name'], data.get('balance', 0))
+            'INSERT INTO tenant_users (tenant_id, full_name, balance) VALUES (%s, %s, %s) RETURNING user_id',
+            (tenant_id, data['full_name'], data.get('balance', 0))
         )
         user_id = cursor.fetchone()[0]
         conn.commit()
@@ -1299,9 +1621,13 @@ def delete_user(user_id):
     """Delete a user and all associated data."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Check if user exists and get user name for logging
-    cursor.execute('SELECT full_name, avatar_path FROM family_members WHERE user_id = %s', (user_id,))
+
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
+    # Check if user exists and get user name for logging (tenant-scoped)
+    cursor.execute('SELECT full_name, avatar_path FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     user = cursor.fetchone()
     if not user:
         cursor.close()
@@ -1309,11 +1635,11 @@ def delete_user(user_id):
         # Log error
         try:
             log_system_event('user_deleted', f'Failed to delete user: User not found', 
-                            {'user_id': user_id}, 'error')
+                            {'user_id': user_id, 'tenant_id': tenant_id}, 'error')
         except Exception:
             pass
         return jsonify({'error': 'User not found'}), 404
-    
+
     user_name = user['full_name']
     
     # Delete avatar file if exists
@@ -1331,16 +1657,16 @@ def delete_user(user_id):
     # If you want to delete transactions too, uncomment the line below:
     # Delete transactions first to avoid foreign key issues, then balances.
     try:
-        cursor.execute('DELETE FROM transactions WHERE user_id = %s', (user_id,))
+        cursor.execute('DELETE FROM tenant_transactions WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
         deleted_tx = cursor.rowcount
     except Exception:
         # If transactions table or FK constraints behave differently, ignore and continue
         deleted_tx = None
 
-    cursor.execute('DELETE FROM cash_balances WHERE user_id = %s', (user_id,))
+    cursor.execute('DELETE FROM tenant_cash_balances WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     
-    # Delete user
-    cursor.execute('DELETE FROM family_members WHERE user_id = %s', (user_id,))
+    # Delete user (tenant-scoped)
+    cursor.execute('DELETE FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     
     conn.commit()
     cursor.close()
@@ -1357,11 +1683,16 @@ def delete_user(user_id):
 
 # Transactions endpoints
 @app.route('/api/transactions', methods=['GET'])
+@kid_or_parent_required
 def get_transactions():
     """Get all transactions with user and chore names."""
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    # Join with users to get user name, description is now directly in transactions table
+    # Join with tenant_users to get user name, description is now directly in tenant_transactions table
     cursor.execute('''
         SELECT 
             t.transaction_id,
@@ -1371,10 +1702,11 @@ def get_transactions():
             t.transaction_type,
             t.timestamp,
             u.full_name as user_name
-        FROM transactions t
-        LEFT JOIN family_members u ON t.user_id = u.user_id
+        FROM tenant_transactions t
+        LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
+        WHERE t.tenant_id = %s
         ORDER BY t.timestamp DESC
-    ''')
+    ''', (tenant_id,))
     transactions = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -1403,12 +1735,18 @@ def get_email_notification_setting(setting_key):
     """Get email notification setting from database."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', (setting_key,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    
-    if result:
+    # Prefer tenant-scoped setting when tenant context is available
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    result = None
+    try:
+        if tenant_id:
+            cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, setting_key))
+            result = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+    if result and result.get('setting_value') is not None:
         return result.get('setting_value') == '1'
     return False
 
@@ -1430,24 +1768,36 @@ def send_notification_email(notification_type, user_name, description, value=Non
     # Get parent email addresses to send notification to
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s)', ('parent_email_addresses', 'email_username'))
+    # Tenant-scoped email settings only
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        cursor.close()
+        conn.close()
+        return
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', (tenant_id, 'parent_email_addresses', 'email_username'))
     results = cursor.fetchall()
     
-    # Get user's current balances if user_id is provided
+    # Get user's current balances if user_id is provided (tenant-scoped)
     point_balance = None
     cash_balance = None
     if user_id:
-        cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (user_id,))
-        user_result = cursor.fetchone()
-        if user_result:
-            point_balance = user_result.get('balance') or 0
-        
-        cursor.execute('SELECT cash_balance FROM cash_balances WHERE user_id = %s', (user_id,))
-        cash_result = cursor.fetchone()
-        if cash_result:
-            cash_balance = cash_result.get('cash_balance') or 0
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if tenant_id:
+            cursor.execute('SELECT balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
+            user_result = cursor.fetchone()
+            if user_result:
+                point_balance = user_result.get('balance') or 0
+
+            cursor.execute('SELECT cash_balance FROM tenant_cash_balances WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
+            cash_result = cursor.fetchone()
+            if cash_result:
+                cash_balance = cash_result.get('cash_balance') or 0
+            else:
+                cash_balance = 0
         else:
-            cash_balance = 0
+            # No tenant context; skip balance lookup
+            point_balance = None
+            cash_balance = None
     
     cursor.close()
     conn.close()
@@ -1570,11 +1920,17 @@ def settings_page():
     return render_template('settings.html')
 
 @app.route('/api/settings', methods=['GET'])
+@parent_required
 def get_settings():
     """Get all settings."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_key, setting_value FROM settings')
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        cursor.close()
+        conn.close()
+        return jsonify({}), 200
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s', (tenant_id,))
     settings = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -1585,14 +1941,18 @@ def get_settings():
     # Fetch kid role permissions from roles table if available (roles table now authoritative)
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
-    kid_role = cursor.fetchone()
+    # Tenant-scoped roles lookup
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if tenant_id:
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM tenant_roles WHERE tenant_id = %s AND role_name = %s", (tenant_id, 'kid'))
+        kid_role = cursor.fetchone()
+    else:
+        kid_role = None
     cursor.close()
     conn.close()
 
     result = {
         'automatic_daily_cash_out': settings_dict.get('automatic_daily_cash_out', '1') == '1',
-        'daily_cash_out_time': settings_dict.get('daily_cash_out_time', '00:00'),
         'max_rollover_points': int(settings_dict.get('max_rollover_points', '4')),
         'daily_cooldown_hours': int(settings_dict.get('daily_cooldown_hours', '12')),
         'weekly_cooldown_days': int(settings_dict.get('weekly_cooldown_days', '4')),
@@ -1610,7 +1970,9 @@ def get_settings():
         'email_notify_points_redeemed': settings_dict.get('email_notify_points_redeemed', '0') == '1',
         'email_notify_cash_withdrawn': settings_dict.get('email_notify_cash_withdrawn', '0') == '1',
         'email_notify_daily_digest': settings_dict.get('email_notify_daily_digest', '0') == '1',
-        'parent_email_addresses': settings_dict.get('parent_email_addresses', '')
+        'parent_email_addresses': settings_dict.get('parent_email_addresses', ''),
+        # For security, never return the actual parent PIN. Frontend will leave field blank to keep existing.
+        'parent_pin': ''
     }
     
     return jsonify(result)
@@ -1624,211 +1986,129 @@ def update_settings():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Get current settings to compare for logging
-    cursor.execute('SELECT setting_key, setting_value FROM settings')
+    # Get current tenant-scoped settings to compare for logging
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Tenant context required'}), 400
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s', (tenant_id,))
     current_settings = {row['setting_key']: row['setting_value'] for row in cursor.fetchall()}
     cursor.close()
     
     # Track changed settings for logging
     changed_settings = {}
     
+    # Helper function to update a boolean setting
+    def update_bool_setting(key, default='0'):
+        if key in data:
+            value = '1' if data[key] else '0'
+            old_value = current_settings.get(key, default)
+            if str(value) != str(old_value):
+                changed_settings[key] = {'old': old_value == '1', 'new': data[key]}
+            cursor.execute('''
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, key, value))
+    
+    # Helper function to update an integer setting with validation
+    def update_int_setting(key, default, min_value=0, error_msg=None):
+        if key in data:
+            try:
+                int_value = int(data[key])
+                if int_value < min_value:
+                    cursor.close()
+                    conn.close()
+                    msg = error_msg or f'{key} must be non-negative'
+                    return jsonify({'error': msg}), 400
+                old_value = current_settings.get(key, str(default))
+                if str(int_value) != str(old_value):
+                    changed_settings[key] = {'old': int(old_value), 'new': int_value}
+                cursor.execute('''
+                    INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+                ''', (tenant_id, key, str(int_value)))
+            except (ValueError, TypeError):
+                cursor.close()
+                conn.close()
+                msg = error_msg or f'{key} must be a number'
+                return jsonify({'error': msg}), 400
+        return None
+    
+    # Helper function to update a string setting
+    def update_string_setting(key, default=''):
+        if key in data:
+            new_value = data[key] or default
+            old_value = current_settings.get(key, default)
+            if new_value != old_value:
+                changed_settings[key] = {'old': old_value, 'new': new_value}
+            cursor.execute('''
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, key, new_value))
+    
     # Switch to regular cursor for updates
     cursor = conn.cursor()
+    
     # Fetch current kid role permissions from roles table for comparison and updates
     try:
-        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM tenant_roles WHERE tenant_id = %s AND role_name = %s", (tenant_id, 'kid'))
         current_role_perms = cursor.fetchone()
-        # cursor.fetchone() returns a tuple in this cursor type; convert to dict-like access using RealDictCursor earlier if needed
     except Exception:
         current_role_perms = None
     
-    if 'automatic_daily_cash_out' in data:
-        value = '1' if data['automatic_daily_cash_out'] else '0'
-        old_value = current_settings.get('automatic_daily_cash_out', '0')
-        if str(value) != str(old_value):
-            changed_settings['automatic_daily_cash_out'] = {'old': old_value == '1', 'new': data['automatic_daily_cash_out']}
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('automatic_daily_cash_out', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
+    # Update boolean settings
+    update_bool_setting('automatic_daily_cash_out', '1')
     
-    if 'daily_cash_out_time' in data:
-        time_value = data['daily_cash_out_time']
-        # Validate time format (HH:MM)
-        try:
-            time_parts = time_value.split(':')
-            if len(time_parts) != 2:
-                raise ValueError('Invalid time format')
-            hour = int(time_parts[0])
-            minute = int(time_parts[1])
-            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'Time must be in 24-hour format (00:00 to 23:59)'}), 400
-            old_value = current_settings.get('daily_cash_out_time', '00:00')
-            if time_value != old_value:
-                changed_settings['daily_cash_out_time'] = {'old': old_value, 'new': time_value}
-            cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('daily_cash_out_time', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (time_value,))
-        except (ValueError, TypeError) as e:
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'Daily cash out time must be in HH:MM format (e.g., 00:00 for midnight)'}), 400
+    # Update integer settings with validation
+    result = update_int_setting('max_rollover_points', 4, 0, 'Max rollover points must be non-negative')
+    if result:
+        return result
     
-    if 'max_rollover_points' in data:
-        try:
-            max_points = int(data['max_rollover_points'])
-            if max_points < 0:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'Max rollover points must be non-negative'}), 400
-            old_value = current_settings.get('max_rollover_points', '4')
-            if str(max_points) != str(old_value):
-                changed_settings['max_rollover_points'] = {'old': int(old_value), 'new': max_points}
-            cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('max_rollover_points', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (str(max_points),))
-        except (ValueError, TypeError):
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'Max rollover points must be a number'}), 400
+    result = update_int_setting('daily_cooldown_hours', 12, 0, 'Daily cooldown hours must be non-negative')
+    if result:
+        return result
     
-    # Handle cooldown period settings
-    if 'daily_cooldown_hours' in data:
-        try:
-            daily_hours = int(data['daily_cooldown_hours'])
-            if daily_hours < 0:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'Daily cooldown hours must be non-negative'}), 400
-            old_value = current_settings.get('daily_cooldown_hours', '12')
-            if str(daily_hours) != str(old_value):
-                changed_settings['daily_cooldown_hours'] = {'old': int(old_value), 'new': daily_hours}
-            cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('daily_cooldown_hours', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (str(daily_hours),))
-        except (ValueError, TypeError):
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'Daily cooldown hours must be a number'}), 400
+    result = update_int_setting('weekly_cooldown_days', 4, 0, 'Weekly cooldown days must be non-negative')
+    if result:
+        return result
     
-    if 'weekly_cooldown_days' in data:
-        try:
-            weekly_days = int(data['weekly_cooldown_days'])
-            if weekly_days < 0:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'Weekly cooldown days must be non-negative'}), 400
-            old_value = current_settings.get('weekly_cooldown_days', '4')
-            if str(weekly_days) != str(old_value):
-                changed_settings['weekly_cooldown_days'] = {'old': int(old_value), 'new': weekly_days}
-            cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('weekly_cooldown_days', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (str(weekly_days),))
-        except (ValueError, TypeError):
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'Weekly cooldown days must be a number'}), 400
+    result = update_int_setting('monthly_cooldown_days', 14, 0, 'Monthly cooldown days must be non-negative')
+    if result:
+        return result
     
-    if 'monthly_cooldown_days' in data:
-        try:
-            monthly_days = int(data['monthly_cooldown_days'])
-            if monthly_days < 0:
-                cursor.close()
-                conn.close()
-                return jsonify({'error': 'Monthly cooldown days must be non-negative'}), 400
-            old_value = current_settings.get('monthly_cooldown_days', '14')
-            if str(monthly_days) != str(old_value):
-                changed_settings['monthly_cooldown_days'] = {'old': int(old_value), 'new': monthly_days}
-            cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('monthly_cooldown_days', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (str(monthly_days),))
-        except (ValueError, TypeError):
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'Monthly cooldown days must be a number'}), 400
+    # Helper function to update kid permission settings
+    def update_kid_permission(key, db_column, perm_index):
+        if key in data:
+            new_bool = bool(data[key])
+            old_bool = False
+            if current_role_perms:
+                try:
+                    old_bool = bool(current_role_perms[perm_index])
+                except Exception:
+                    old_bool = False
+            if new_bool != old_bool:
+                changed_settings[key] = {'old': old_bool, 'new': new_bool}
+            cursor.execute(f'''
+                UPDATE tenant_roles SET {db_column} = %s WHERE role_name = 'kid' AND tenant_id = %s
+            ''', (new_bool, tenant_id))
     
-    # Handle kid permission settings
-    if 'kid_allowed_record_chore' in data:
-        new_bool = bool(data['kid_allowed_record_chore'])
-        old_bool = False
-        if current_role_perms:
-            try:
-                old_bool = bool(current_role_perms[0])
-            except Exception:
-                old_bool = False
-        if new_bool != old_bool:
-            changed_settings['kid_allowed_record_chore'] = {'old': old_bool, 'new': new_bool}
-        cursor.execute('''
-            UPDATE roles SET can_record_chore = %s WHERE role_name = 'kid'
-        ''', (new_bool,))
-    
-    if 'kid_allowed_redeem_points' in data:
-        new_bool = bool(data['kid_allowed_redeem_points'])
-        old_bool = False
-        if current_role_perms:
-            try:
-                old_bool = bool(current_role_perms[1])
-            except Exception:
-                old_bool = False
-        if new_bool != old_bool:
-            changed_settings['kid_allowed_redeem_points'] = {'old': old_bool, 'new': new_bool}
-        cursor.execute('''
-            UPDATE roles SET can_redeem_points = %s WHERE role_name = 'kid'
-        ''', (new_bool,))
-    
-    if 'kid_allowed_withdraw_cash' in data:
-        new_bool = bool(data['kid_allowed_withdraw_cash'])
-        old_bool = False
-        if current_role_perms:
-            try:
-                old_bool = bool(current_role_perms[2])
-            except Exception:
-                old_bool = False
-        if new_bool != old_bool:
-            changed_settings['kid_allowed_withdraw_cash'] = {'old': old_bool, 'new': new_bool}
-        cursor.execute('''
-            UPDATE roles SET can_withdraw_cash = %s WHERE role_name = 'kid'
-        ''', (new_bool,))
-    
-    if 'kid_allowed_view_history' in data:
-        new_bool = bool(data['kid_allowed_view_history'])
-        old_bool = False
-        if current_role_perms:
-            try:
-                old_bool = bool(current_role_perms[3])
-            except Exception:
-                old_bool = False
-        if new_bool != old_bool:
-            changed_settings['kid_allowed_view_history'] = {'old': old_bool, 'new': new_bool}
-        cursor.execute('''
-            UPDATE roles SET can_view_history = %s WHERE role_name = 'kid'
-        ''', (new_bool,))
+    # Update kid permission settings
+    update_kid_permission('kid_allowed_record_chore', 'can_record_chore', 0)
+    update_kid_permission('kid_allowed_redeem_points', 'can_redeem_points', 1)
+    update_kid_permission('kid_allowed_withdraw_cash', 'can_withdraw_cash', 2)
+    update_kid_permission('kid_allowed_view_history', 'can_view_history', 3)
     
     # Handle email settings
-    if 'email_smtp_server' in data:
-        new_value = data['email_smtp_server'] or ''
-        old_value = current_settings.get('email_smtp_server', '')
-        if new_value != old_value:
-            changed_settings['email_smtp_server'] = {'old': old_value, 'new': new_value}
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_smtp_server', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (new_value,))
+    update_string_setting('email_smtp_server', '')
+    update_string_setting('email_username', '')
+    update_string_setting('email_sender_name', 'Family Chores')
+    update_string_setting('parent_email_addresses', '')
     
+    # Handle SMTP port with validation
     if 'email_smtp_port' in data:
         try:
             smtp_port = str(data['email_smtp_port']).strip()
@@ -1841,25 +2121,14 @@ def update_settings():
             if new_value != old_value:
                 changed_settings['email_smtp_port'] = {'old': old_value, 'new': new_value}
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('email_smtp_port', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (new_value,))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, 'email_smtp_port', %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, new_value))
         except (ValueError, TypeError):
             cursor.close()
             conn.close()
             return jsonify({'error': 'SMTP port must be a number'}), 400
-    
-    if 'email_username' in data:
-        new_value = data['email_username'] or ''
-        old_value = current_settings.get('email_username', '')
-        if new_value != old_value:
-            changed_settings['email_username'] = {'old': old_value, 'new': new_value}
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_username', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (new_value,))
     
     if 'email_password' in data:
         # Only update password if provided (not empty)
@@ -1871,77 +2140,49 @@ def update_settings():
             # Encrypt the password before storing
             encrypted_password = encrypt_password(data['email_password'])
             cursor.execute('''
-                INSERT INTO settings (setting_key, setting_value)
-                VALUES ('email_password', %s)
-                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-            ''', (encrypted_password,))
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, 'email_password', %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, encrypted_password))
     
     # Handle email notification toggles
-    if 'email_notify_chore_completed' in data:
-        value = '1' if data['email_notify_chore_completed'] else '0'
-        old_value = current_settings.get('email_notify_chore_completed', '0')
-        if value != old_value:
-            changed_settings['email_notify_chore_completed'] = {'old': old_value == '1', 'new': data['email_notify_chore_completed']}
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_notify_chore_completed', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
-    
-    if 'email_notify_points_redeemed' in data:
-        value = '1' if data['email_notify_points_redeemed'] else '0'
-        old_value = current_settings.get('email_notify_points_redeemed', '0')
-        if value != old_value:
-            changed_settings['email_notify_points_redeemed'] = {'old': old_value == '1', 'new': data['email_notify_points_redeemed']}
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_notify_points_redeemed', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
-    
-    if 'email_notify_cash_withdrawn' in data:
-        value = '1' if data['email_notify_cash_withdrawn'] else '0'
-        old_value = current_settings.get('email_notify_cash_withdrawn', '0')
-        if value != old_value:
-            changed_settings['email_notify_cash_withdrawn'] = {'old': old_value == '1', 'new': data['email_notify_cash_withdrawn']}
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_notify_cash_withdrawn', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
-    
-    if 'email_notify_daily_digest' in data:
-        value = '1' if data['email_notify_daily_digest'] else '0'
-        old_value = current_settings.get('email_notify_daily_digest', '0')
-        if value != old_value:
-            changed_settings['email_notify_daily_digest'] = {'old': old_value == '1', 'new': data['email_notify_daily_digest']}
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_notify_daily_digest', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (value,))
-    
-    if 'email_sender_name' in data:
-        new_value = data['email_sender_name'] or 'Family Chores'
-        old_value = current_settings.get('email_sender_name', 'Family Chores')
-        if new_value != old_value:
-            changed_settings['email_sender_name'] = {'old': old_value, 'new': new_value}
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('email_sender_name', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (new_value,))
-    
-    if 'parent_email_addresses' in data:
-        new_value = data['parent_email_addresses'] or ''
-        old_value = current_settings.get('parent_email_addresses', '')
-        if new_value != old_value:
-            changed_settings['parent_email_addresses'] = {'old': old_value, 'new': new_value}
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('parent_email_addresses', %s)
-            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-        ''', (new_value,))
+    update_bool_setting('email_notify_chore_completed', '0')
+    update_bool_setting('email_notify_points_redeemed', '0')
+    update_bool_setting('email_notify_cash_withdrawn', '0')
+    update_bool_setting('email_notify_daily_digest', '0')
+
+    # Handle parent PIN: only update if provided (non-empty). Accept only exactly 4 digits.
+    if 'parent_pin' in data:
+        try:
+            pin_value = str(data['parent_pin'] or '').strip()
+        except Exception:
+            pin_value = ''
+
+        # If empty, user chose to keep existing PIN; do nothing
+        if pin_value:
+            # Validate exactly 4 digits
+            if not (len(pin_value) == 4 and pin_value.isdigit()):
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Parent PIN must be exactly 4 digits or left empty to keep existing'}), 400
+
+            # Determine tenant context. Parent PIN is tenant-scoped.
+            tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+            if not tenant_id:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Tenant context required to set parent PIN'}), 400
+
+            # Log that PIN was changed (don't report old/new values for security)
+            changed_settings['parent_pin'] = 'changed'
+
+            # Encrypt the PIN before storing for security
+            encrypted_pin = encrypt_password(pin_value)
+            cursor.execute('''
+                INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+            ''', (tenant_id, 'parent_pin', encrypted_pin))
     
     conn.commit()
     cursor.close()
@@ -1962,6 +2203,7 @@ def update_settings():
 
 # Kid permissions endpoints
 @app.route('/api/kid-permissions', methods=['GET'])
+@kid_or_parent_required
 def get_kid_permissions():
     """Return kid role permissions.
 
@@ -1971,7 +2213,19 @@ def get_kid_permissions():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'kid_allowed_record_chore': False,
+                'kid_allowed_redeem_points': False,
+                'kid_allowed_withdraw_cash': False,
+                'kid_allowed_view_history': False,
+            })
+
+        # Check tenant-scoped roles first
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM tenant_roles WHERE tenant_id = %s AND role_name = %s", (tenant_id, 'kid'))
         row = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -1984,11 +2238,21 @@ def get_kid_permissions():
                 'kid_allowed_view_history': bool(row.get('can_view_history')),
             })
 
-        # Fallback to settings table if roles row not present
+        # Fallback to tenant-scoped settings if roles row not present
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s, %s, %s)', (
-            'kid_allowed_record_chore', 'kid_allowed_redeem_points', 'kid_allowed_withdraw_cash', 'kid_allowed_view_history'))
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'kid_allowed_record_chore': False,
+                'kid_allowed_redeem_points': False,
+                'kid_allowed_withdraw_cash': False,
+                'kid_allowed_view_history': False,
+            })
+        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s)', (
+            tenant_id, 'kid_allowed_record_chore', 'kid_allowed_redeem_points', 'kid_allowed_withdraw_cash', 'kid_allowed_view_history'))
         settings = {r['setting_key']: r['setting_value'] for r in cursor.fetchall()}
         cursor.close()
         conn.close()
@@ -2054,7 +2318,13 @@ def set_kid_permissions():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         # Fetch current values to compute changes
-        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM roles WHERE role_name = %s", ('kid',))
+        # Tenant-scoped roles lookup
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Tenant context required'}), 400
+        cursor.execute("SELECT can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history FROM tenant_roles WHERE tenant_id = %s AND role_name = %s", (tenant_id, 'kid'))
         current = cursor.fetchone()
 
         # Prepare upsert: insert if not exists, otherwise update
@@ -2068,15 +2338,15 @@ def set_kid_permissions():
         }
 
         cursor.execute('''
-            INSERT INTO roles (role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (role_name) DO UPDATE SET
+            INSERT INTO tenant_roles (tenant_id, role_name, can_record_chore, can_redeem_points, can_withdraw_cash, can_view_history)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (tenant_id, role_name) DO UPDATE SET
                 can_record_chore = EXCLUDED.can_record_chore,
                 can_redeem_points = EXCLUDED.can_redeem_points,
                 can_withdraw_cash = EXCLUDED.can_withdraw_cash,
                 can_view_history = EXCLUDED.can_view_history
         ''', (
-            'kid', insert_vals['can_record_chore'], insert_vals['can_redeem_points'], insert_vals['can_withdraw_cash'], insert_vals['can_view_history']
+            tenant_id, 'kid', insert_vals['can_record_chore'], insert_vals['can_redeem_points'], insert_vals['can_withdraw_cash'], insert_vals['can_view_history']
         ))
 
         # Determine which settings changed for logging
@@ -2143,9 +2413,13 @@ def manual_daily_cash_out():
 def reset_points():
     """Reset all users' points balances to 0."""
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE family_members SET balance = 0')
+        cursor.execute('UPDATE tenant_users SET balance = 0 WHERE tenant_id = %s', (tenant_id,))
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -2176,9 +2450,13 @@ def reset_points():
 def reset_cash():
     """Reset all users' cash balances to 0."""
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE cash_balances SET cash_balance = 0.0')
+        cursor.execute('UPDATE tenant_cash_balances SET cash_balance = 0.0 WHERE tenant_id = %s', (tenant_id,))
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -2209,14 +2487,18 @@ def reset_cash():
 def reset_transactions():
     """Delete all transactions from the database."""
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'tenant context required'}), 401
+
         conn = get_db_connection()
         cursor = conn.cursor()
         # Get count before deletion for logging
-        cursor.execute('SELECT COUNT(*) as total FROM transactions')
+        cursor.execute('SELECT COUNT(*) as total FROM tenant_transactions WHERE tenant_id = %s', (tenant_id,))
         count_result = cursor.fetchone()
         total_transactions = count_result[0] if count_result else 0
-        
-        cursor.execute('DELETE FROM transactions')
+
+        cursor.execute('DELETE FROM tenant_transactions WHERE tenant_id = %s', (tenant_id,))
         conn.commit()
         cursor.close()
         conn.close()
@@ -2254,10 +2536,15 @@ def send_email(to_email, subject, body_html, body_text=None):
         tuple: (success: bool, message: str) - success indicates if email was sent, message contains status or error
     """
     try:
-        # Get email settings from database
+        # Get tenant-scoped email settings from database
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE %s', ('email_%',))
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            cursor.close()
+            conn.close()
+            return False, 'Tenant context required'
+        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
         settings = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -2346,10 +2633,15 @@ def send_test_email():
     # Get parent email addresses from request
     parent_emails = data.get('parent_email_addresses', [])
     
-    # Get email settings from database
+    # Get tenant-scoped email settings from database
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s)', ('email_username', 'parent_email_addresses'))
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Tenant context required'}), 400
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', (tenant_id, 'email_username', 'parent_email_addresses'))
     settings = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -2447,7 +2739,7 @@ def send_daily_digest_manual():
         return jsonify({'error': f'Error sending daily digest: {error_msg}'}), 500
 
 @app.route('/api/withdraw-cash', methods=['POST'])
-@kid_permission_required('can_withdraw_cash')
+@kid_permission_required('kid_allowed_withdraw_cash')
 def withdraw_cash():
     """Withdraw cash from a user's cash balance."""
     data = request.get_json()
@@ -2467,16 +2759,20 @@ def withdraw_cash():
     except (ValueError, TypeError):
         return jsonify({'error': 'Amount must be a number'}), 400
     
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Check user exists and get cash balance
+
+    # Check user exists and get cash balance (tenant-scoped)
     cursor.execute('''
         SELECT u.user_id, COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM family_members u
-        LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
-        WHERE u.user_id = %s
-    ''', (data['user_id'],))
+        FROM tenant_users u
+        LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
+        WHERE u.user_id = %s AND u.tenant_id = %s
+    ''', (data['user_id'], tenant_id))
     user = cursor.fetchone()
     
     if not user:
@@ -2490,33 +2786,32 @@ def withdraw_cash():
         conn.close()
         return jsonify({'error': f'Insufficient cash balance. User has ${current_cash:.2f}.'}), 400
     
-    # Ensure cash_balance record exists
+    # Ensure cash_balance record exists (tenant-scoped)
     cursor.execute('''
-        INSERT INTO cash_balances (user_id, cash_balance) 
-        VALUES (%s, 0.0)
-        ON CONFLICT (user_id) DO NOTHING
-    ''', (data['user_id'],))
-    
+        INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) 
+        VALUES (%s, %s, 0.0)
+        ON CONFLICT (tenant_id, user_id) DO NOTHING
+    ''', (tenant_id, data['user_id']))
+
     # Update cash_balance (subtract amount)
     cursor.execute('''
-        UPDATE cash_balances 
+        UPDATE tenant_cash_balances 
         SET cash_balance = cash_balance - %s 
-        WHERE user_id = %s
-    ''', (float(amount), data['user_id']))
-    
-    # Create transaction record for the withdrawal
-    # Store amount as negative value in transactions table (for consistency with redemptions)
-    # Store timestamp in system timezone
+        WHERE user_id = %s AND tenant_id = %s
+    ''', (float(amount), data['user_id'], tenant_id))
+
+    # Create transaction record for the withdrawal (tenant-scoped)
+    # Store amount as negative value in tenant_transactions table
     cursor.execute('''
-        INSERT INTO transactions (user_id, description, value, transaction_type, timestamp)
-        VALUES (%s, NULL, %s, 'cash_withdrawal', %s)
+        INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
+        VALUES (%s, %s, NULL, %s, 'cash_withdrawal', %s)
         RETURNING transaction_id
-    ''', (data['user_id'], -amount, get_system_timestamp()))
+    ''', (tenant_id, data['user_id'], -amount, get_system_timestamp()))
     result = cursor.fetchone()
     transaction_id = result['transaction_id'] if result else None
-    
-    # Get user name for email notification
-    cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+
+    # Get user name for email notification (tenant-scoped)
+    cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
     user_result = cursor.fetchone()
     user_name = user_result.get('full_name') if user_result else 'Unknown User'
     
@@ -2545,18 +2840,24 @@ def get_setting(key, default):
     """Get a setting value from the database."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', (key,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    
-    if result:
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    result = None
+    try:
+        if tenant_id:
+            cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, key))
+            result = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+    if result and result.get('setting_value') is not None:
         if key == 'automatic_daily_cash_out':
             return result.get('setting_value') == '1'
         elif key == 'max_rollover_points':
-            return int(result.get('setting_value'))
-        elif key == 'daily_cash_out_time':
-            return result.get('setting_value', default)
+            try:
+                return int(result.get('setting_value'))
+            except Exception:
+                return default
         return result.get('setting_value')
     return default
 
@@ -2572,14 +2873,15 @@ def process_daily_cash_out(triggered_manually=False):
     automatic_cash_out = get_setting('automatic_daily_cash_out', True)
     max_rollover = get_setting('max_rollover_points', 4)
     
-    # Get all users
-    cursor.execute('SELECT user_id, balance FROM family_members')
+    # Get all users (tenant-scoped rows include tenant_id)
+    cursor.execute('SELECT tenant_id, user_id, balance FROM tenant_users')
     users = cursor.fetchall()
-    
+
     for user in users:
+        tenant_id_row = user.get('tenant_id')
         user_id = user.get('user_id')
         balance = user.get('balance') or 0
-        
+
         if automatic_cash_out:
             # Convert (balance - max_rollover) to cash, keep max_rollover points
             if balance > max_rollover:
@@ -2588,42 +2890,42 @@ def process_daily_cash_out(triggered_manually=False):
                 remainder = balance % 5
                 rollover = min(max_rollover, remainder)
                 
-                # Ensure cash_balance record exists
+                # Ensure cash_balance record exists (tenant-scoped)
                 cursor.execute('''
-                    INSERT INTO cash_balances (user_id, cash_balance) 
-                    VALUES (%s, 0.0)
-                    ON CONFLICT (user_id) DO NOTHING
-                ''', (user_id,))
+                    INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) 
+                    VALUES (%s, %s, 0.0)
+                    ON CONFLICT (tenant_id, user_id) DO NOTHING
+                ''', (tenant_id_row, user_id))
                 
                 # Update cash_balance
                 cursor.execute('''
-                    UPDATE cash_balances 
+                    UPDATE tenant_cash_balances 
                     SET cash_balance = cash_balance + %s 
-                    WHERE user_id = %s
-                ''', (cash_amount, user_id))
+                    WHERE user_id = %s AND tenant_id = %s
+                ''', (cash_amount, user_id, tenant_id_row))
                 
-                # Update point balance to max_rollover
+                # Update point balance to max_rollover (tenant-scoped)
                 cursor.execute('''
-                    UPDATE family_members 
+                    UPDATE tenant_users 
                     SET balance = %s 
-                    WHERE user_id = %s
-                ''', (rollover, user_id))
+                    WHERE user_id = %s AND tenant_id = %s
+                ''', (rollover, user_id, tenant_id_row))
                 
-                # Create transaction record for the conversion
+                # Create transaction record for the conversion (tenant-scoped)
                 # Store timestamp in system timezone
                 description = f'Daily cash out: Redeemed {points_to_convert} points for ${cash_amount:.2f}'
                 cursor.execute('''
-                    INSERT INTO transactions (user_id, description, value, transaction_type, timestamp)
-                    VALUES (%s, %s, %s, 'points_redemption', %s)
-                ''', (user_id, description, -points_to_convert, get_system_timestamp()))
+                    INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp)
+                    VALUES (%s, %s, %s, %s, 'points_redemption', %s)
+                ''', (tenant_id_row, user_id, description, -points_to_convert, get_system_timestamp()))
         else:
-            # Just cap the balance at max_rollover if it exceeds it
+            # Just cap the balance at max_rollover if it exceeds it (tenant-scoped)
             if balance > max_rollover:
                 cursor.execute('''
-                    UPDATE family_members 
+                    UPDATE tenant_users 
                     SET balance = %s 
-                    WHERE user_id = %s
-                ''', (max_rollover, user_id))
+                    WHERE user_id = %s AND tenant_id = %s
+                ''', (max_rollover, user_id, tenant_id_row))
     
     conn.commit()
     cursor.close()
@@ -2641,40 +2943,7 @@ def process_daily_cash_out(triggered_manually=False):
     
     logger.info(f"Daily cash out processed at {datetime.now()}")
 
-def get_last_daily_cash_out_date():
-    """Get the last date when daily cash out was processed from database."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_value FROM settings WHERE setting_key = %s', ('last_daily_cash_out_date',))
-        result = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if result and result.get('setting_value'):
-            return datetime.strptime(result['setting_value'], '%Y-%m-%d').date()
-        return None
-    except Exception as e:
-        logger.error(f"Error getting last daily cash out date: {e}", exc_info=True)
-        return None
 
-def set_last_daily_cash_out_date(date):
-    """Store the last date when daily cash out was processed in database."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        date_str = date.strftime('%Y-%m-%d')
-        cursor.execute('''
-            INSERT INTO settings (setting_key, setting_value)
-            VALUES ('last_daily_cash_out_date', %s)
-            ON CONFLICT (setting_key) 
-            DO UPDATE SET setting_value = %s
-        ''', (date_str, date_str))
-        conn.commit()
-        cursor.close()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Error setting last daily cash out date: {e}", exc_info=True)
 
 
 @app.route('/api/record-chore', methods=['POST'])
@@ -2687,6 +2956,10 @@ def record_chore():
         return jsonify({'error': 'user_id is required'}), 400
     chore_id = data.get('chore_id')
 
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -2695,8 +2968,8 @@ def record_chore():
 
     try:
         if chore_id:
-            # Lookup stored chore (schema uses `chore` and `point_value`)
-            cursor.execute('SELECT chore, point_value FROM chores WHERE chore_id = %s', (chore_id,))
+            # Lookup stored chore (tenant-scoped)
+            cursor.execute('SELECT chore, point_value FROM tenant_chores WHERE chore_id = %s AND tenant_id = %s', (chore_id, tenant_id))
             chore = cursor.fetchone()
             if not chore:
                 cursor.close()
@@ -2720,19 +2993,19 @@ def record_chore():
             conn.close()
             return jsonify({'error': 'Points must be greater than 0'}), 400
 
-        # Insert transaction and update balance
+        # Insert transaction and update balance (tenant-scoped)
         timestamp = get_system_timestamp()
         cursor.execute(
-            'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
-            (data['user_id'], description, points, 'chore_completed', timestamp)
+            'INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s, %s) RETURNING transaction_id',
+            (tenant_id, data['user_id'], description, points, 'chore_completed', timestamp)
         )
         res = cursor.fetchone()
         transaction_id = res['transaction_id'] if res else None
 
-        cursor.execute('UPDATE family_members SET balance = balance + %s WHERE user_id = %s', (points, data['user_id']))
+        cursor.execute('UPDATE tenant_users SET balance = balance + %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
 
-        # Get user name for notification/logging
-        cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+        # Get user name for notification/logging (tenant-scoped)
+        cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
         user_result = cursor.fetchone()
         user_name = user_result.get('full_name') if user_result else 'Unknown User'
 
@@ -2787,12 +3060,16 @@ def redeem_points():
     redemption_type = data.get('redemption_type')  # e.g. 'money' or other
     description = data.get('description') or (f'Redemed {points} points' + (f' for {redemption_type}' if redemption_type else ''))
 
+    tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+    if not tenant_id:
+        return jsonify({'error': 'tenant context required'}), 401
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        # Verify user balance
-        cursor.execute('SELECT balance FROM family_members WHERE user_id = %s', (data['user_id'],))
+        # Verify user balance (tenant-scoped)
+        cursor.execute('SELECT balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
         user_row = cursor.fetchone()
         if not user_row:
             cursor.close()
@@ -2812,24 +3089,24 @@ def redeem_points():
                 conn.close()
                 return jsonify({'error': 'Points must be a multiple of 5 to redeem for money (5 points = $1)'}), 400
             cash_amount = points // 5
-            # Ensure cash_balance record exists
-            cursor.execute('INSERT INTO cash_balances (user_id, cash_balance) VALUES (%s, 0.0) ON CONFLICT (user_id) DO NOTHING', (data['user_id'],))
-            cursor.execute('UPDATE cash_balances SET cash_balance = cash_balance + %s WHERE user_id = %s', (float(cash_amount), data['user_id']))
+            # Ensure cash_balance record exists (tenant-scoped)
+            cursor.execute('INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) VALUES (%s, %s, 0.0) ON CONFLICT (tenant_id, user_id) DO NOTHING', (tenant_id, data['user_id']))
+            cursor.execute('UPDATE tenant_cash_balances SET cash_balance = cash_balance + %s WHERE user_id = %s AND tenant_id = %s', (float(cash_amount), data['user_id'], tenant_id))
 
         # Insert transaction (store negative points)
         timestamp = get_system_timestamp()
         cursor.execute(
-            'INSERT INTO transactions (user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s) RETURNING transaction_id',
-            (data['user_id'], description, -points, 'points_redemption', timestamp)
+            'INSERT INTO tenant_transactions (tenant_id, user_id, description, value, transaction_type, timestamp) VALUES (%s, %s, %s, %s, %s, %s) RETURNING transaction_id',
+            (tenant_id, data['user_id'], description, -points, 'points_redemption', timestamp)
         )
         res = cursor.fetchone()
         transaction_id = res['transaction_id'] if res else None
 
-        # Subtract points from user balance
-        cursor.execute('UPDATE family_members SET balance = balance - %s WHERE user_id = %s', (points, data['user_id']))
+        # Subtract points from user balance (tenant-scoped)
+        cursor.execute('UPDATE tenant_users SET balance = balance - %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
 
         # Get user name for notification/logging
-        cursor.execute('SELECT full_name FROM family_members WHERE user_id = %s', (data['user_id'],))
+        cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
         user_result = cursor.fetchone()
         user_name = user_result.get('full_name') if user_result else 'Unknown User'
 
@@ -2872,11 +3149,16 @@ def send_daily_digest_email(force=False):
     if not force and not get_email_notification_setting('email_notify_daily_digest'):
         return
     try:
+        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+        if not tenant_id:
+            if force:
+                raise ValueError('No tenant context for daily digest')
+            return
         # Get parent email addresses
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (%s, %s, %s, %s, %s, %s)', 
-                      ('parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
+        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s, %s, %s)', 
+                  (tenant_id, 'parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
         results = cursor.fetchall()
         settings_dict = {row['setting_key']: row['setting_value'] for row in results}
         
@@ -2902,7 +3184,7 @@ def send_daily_digest_email(force=False):
         yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
         yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
         
-        # Get all transactions for yesterday
+        # Get all transactions for yesterday (tenant-scoped)
         cursor.execute('''
             SELECT 
                 t.transaction_id,
@@ -2912,24 +3194,25 @@ def send_daily_digest_email(force=False):
                 t.transaction_type,
                 t.timestamp,
                 u.full_name as user_name
-            FROM transactions t
-            LEFT JOIN family_members u ON t.user_id = u.user_id
-            WHERE t.timestamp >= %s AND t.timestamp <= %s
+            FROM tenant_transactions t
+            LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
+            WHERE t.tenant_id = %s AND t.timestamp >= %s AND t.timestamp <= %s
             ORDER BY t.timestamp DESC
-        ''', (yesterday_start, yesterday_end))
+        ''', (tenant_id, yesterday_start, yesterday_end))
         transactions = cursor.fetchall()
-        
-        # Get all users with their current balances
+
+        # Get all users with their current balances (tenant-scoped)
         cursor.execute('''
             SELECT 
                 u.user_id,
                 u.full_name,
                 u.balance as point_balance,
                 COALESCE(cb.cash_balance, 0.0) as cash_balance
-            FROM family_members u
-            LEFT JOIN cash_balances cb ON u.user_id = cb.user_id
+            FROM tenant_users u
+            LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
+            WHERE u.tenant_id = %s
             ORDER BY u.user_id
-        ''')
+        ''', (tenant_id,))
         users = cursor.fetchall()
         
         cursor.close()
@@ -3088,23 +3371,21 @@ def job_timer():
     
     while True:
         try:
-            # Get configured cash out time (default to midnight)
-            cash_out_time_str = get_setting('daily_cash_out_time', '00:00')
+            # Automatic cash out will always be at midnight
+            cash_out_time_str = '00:00'
             try:
                 cash_out_hour, cash_out_minute = map(int, cash_out_time_str.split(':'))
             except (ValueError, AttributeError):
                 # Fallback to midnight if parsing fails
                         cash_out_hour, cash_out_minute = 0, 0
                         logger.warning(f"Failed to parse cash out time '{cash_out_time_str}', using midnight (00:00)")
-            # Get last automatic cash out date from database (persisted across restarts)
-            last_processed_date = get_last_daily_cash_out_date()
 
             # Get current time in local system timezone
             now = datetime.now()
             current_date = now.date()
 
             jobs_to_trigger = []
-            if now.hour == cash_out_hour and now.minute == cash_out_minute and last_processed_date != current_date:
+            if now.hour == cash_out_hour and now.minute == cash_out_minute:
                 jobs_to_trigger.append("cash_out")
 
             if now.hour == 0 and now.minute == 0:

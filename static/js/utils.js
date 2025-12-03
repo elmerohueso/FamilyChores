@@ -59,8 +59,8 @@ async function checkRoleOnLoad() {
         // Server reports no role — clear in-memory role and redirect off protected pages
         setLocalRole(null);
         const pathname = window.location.pathname || '/';
-        if (pathname !== '/') {
-            window.location.replace('/');
+        if (pathname !== '/dashboard' && pathname !== '/') {
+            window.location.replace('/dashboard');
         }
     } catch (err) {
         console.error('Error checking role on load:', err);
@@ -114,14 +114,7 @@ function getUrlParameter(name) {
     return urlParams.get(name);
 }
 
-/**
- * Clean URL by replacing current state with base URL
- * This removes query parameters from the address bar while preserving page state
- */
-function cleanUrl() {
-    const baseUrl = '/';
-    window.history.replaceState({}, '', baseUrl);
-}
+
 
 /**
  * Pre-select user in dropdown and trigger change event
@@ -139,8 +132,7 @@ function preSelectUserFromUrl(selectId) {
             const changeEvent = new Event('change');
             userSelect.dispatchEvent(changeEvent);
         }
-        // Clean URL after pre-selecting
-        cleanUrl();
+        
         return userIdParam;
     }
     return null;
@@ -546,9 +538,11 @@ async function setServerRole(role) {
 }
 
 /**
- * Logout the current user (clears role and reloads page)
+ * roleLogout: clear the current session role and reload the page
+ * Clears role on server (best-effort), clears the client in-memory role,
+ * then reloads the page so the role selection overlay is shown.
  */
-async function logout() {
+async function roleLogout() {
     try {
         // Clear role on server (ignore response outcome for now)
         await setServerRole('');
@@ -557,8 +551,9 @@ async function logout() {
     }
     // Clear local stored role so page load shows selection overlay
     setLocalRole('');
-    // Reload the page to show role selection again
-    window.location.reload();
+    // Navigate to the requested dashboard path so the role selection UI is shown
+    // Use replace to avoid adding an extra history entry
+    window.location.replace('/dashboard');
 }
 
 /**
@@ -973,5 +968,49 @@ function syncScroll(source, topScrollId, bottomScrollId) {
         bottom.scrollLeft = top.scrollLeft;
     } else {
         top.scrollLeft = bottom.scrollLeft;
+    }
+}
+
+/**
+ * Change the authenticated tenant password.
+ * @param {string} currentPassword - Current password
+ * @param {string} newPassword - New password
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function resetTenantPassword(currentPassword, newPassword) {
+    try {
+        const response = await fetch('/api/tenant/password', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+        });
+        return response;
+    } catch (error) {
+        console.error('Error resetting tenant password:', error);
+        throw error;
+    }
+}
+
+
+/**
+ * Fetch server timezone information from `/api/tz-info`.
+ * Returns an object { tz_offset_min, tz_name, timestamp } or null on error.
+ * @returns {Promise<{tz_offset_min:number,tz_name:string,timestamp:string}|null>}
+ */
+async function getServerTzInfo() {
+    try {
+        const resp = await fetch('/api/tz-info', { credentials: 'same-origin' });
+        if (!resp.ok) {
+            console.warn('getServerTzInfo failed:', resp.status);
+            return null;
+        }
+        const data = await resp.json();
+        return data;
+    } catch (err) {
+        console.error('Error fetching tz info:', err);
+        return null;
     }
 }

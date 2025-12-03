@@ -20,7 +20,7 @@
                 <div></div>
                 <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
                     <a href="/settings" class="settings-link" id="settingsLink" title="Settings">⚙️</a>
-                    <button class="btn-logout" id="logoutBtn" onclick="logout()" title="Logout">Select Role</button>
+                    <button class="btn-logout" id="logoutBtn" onclick="roleLogout()" title="Logout">Select Role</button>
                 </div>
             </div>
         </header>
@@ -215,8 +215,7 @@
 
         // Show role selection on page load if not already selected
         window.addEventListener('DOMContentLoaded', async () => {
-            // Clean URL to show base path only
-            cleanUrl();
+            
             
             // Load kid permissions first
             permissions = await getPermissions();
