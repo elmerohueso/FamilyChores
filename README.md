@@ -1,9 +1,15 @@
+
 # Family Chores
 
 A web application for managing family chores, points, and rewards using Python and PostgreSQL.
 
+**Now with multi-tenancy support:** The app is designed to support multiple independent families (tenants) on a single deployment, with strict data isolation and tenant-aware APIs. See tenant creation and management details below.
+
+
 ## Features
 
+- **Progressive Web App (PWA)**: Install on mobile and desktop devices for app-like experience with offline support
+- **Multi-Tenancy**: Host multiple independent families (tenants) in a single deployment. Each tenant's data is strictly isolated. Tenant creation is protected by a management key.
 - **User Management**: Add and delete family members with customizable avatars
 - **Chore Tracking**: Create, edit, and delete chores with point values and repeat intervals
 - **Point System**: Track points earned from completed chores
@@ -18,6 +24,14 @@ A web application for managing family chores, points, and rewards using Python a
 - **Settings Management**: Configure system settings, manage chores list, and reset data
 - **CSV Import**: Bulk import chores from CSV files
 - **Multi-Architecture**: Supports both ARM64 (Apple Silicon, Raspberry Pi) and AMD64 (Intel/AMD) architectures
+
+#### Progressive Web App (PWA)
+- **Install on Any Device**: Add to home screen on iOS/Android or install on desktop (Chrome/Edge)
+- **Offline Support**: Access cached pages when internet is unavailable
+- **App-like Experience**: Runs in standalone mode without browser chrome
+- **Fast Loading**: Aggressive caching for instant subsequent loads
+- **App Shortcuts**: Quick access to Record Chore and Dashboard (on supported devices)
+- See [PWA.md](PWA.md) for installation instructions and technical details
 
 #### CSV Import
 - Import multiple chores at once via CSV file
@@ -62,11 +76,12 @@ Parents have full control over what kids can access through granular permission 
 - Can record chores, redeem points, and withdraw cash
 
 ### New / Recent Improvements
+- **Progressive Web App (PWA)**: Family Chores can now be installed as a standalone app on mobile and desktop devices with offline support. See [PWA.md](PWA.md) for details.
 - **CSV Export (Parent)**: Parents can now export the chores list (from the Chores page) and transaction history (History page) to CSV with a column-selection dialog. Exports respect any active filters.
 - **Standardized toasts**: High-level system and network messages are shown via top-center toasts for consistent feedback across pages.
 - **Layout tweak**: User cards on the Home page now use a Flexbox-based layout to stay centered (especially for 1–2 users).
 - **Backend deletion order**: When deleting a user, their transactions are removed first to avoid foreign-key constraint errors.
- - **Responsive / Mobile support**: Improved handling for narrow displays (phones and small tablets).
+- **Responsive / Mobile support**: Improved handling for narrow displays (phones and small tablets).
 
 
 ### Prerequisites
@@ -76,53 +91,71 @@ Parents have full control over what kids can access through granular permission 
 ### Run using pre-built image
 1. Download docker-compose.yml from this repository
 2. Edit the environment variables, ports, and volumes as desired
+- Set the credentials for your initial tenant: `ADMIN_NAME`, `ADMIN_PASSWORD`, `PARENT_PIN`.
+- Set a secure management key: `TENANT_CREATION_KEY`.
 3. From the directory housing docker-compose.yml, run the following commands:
 
 `docker compose up -d`
 
 The application will be available at `http://localhost:8000` (or at the specified port)
 
+
+
 #### Environment Variables
-- `SECRET_KEY` - Flask secret key (default: `dev-secret-key-change-in-production`)
-- `POSTGRES_HOST` - PostgreSQL hostname (default: `familychores-db`)
-- `POSTGRES_DATABASE` - Database name (default: `family_chores`)
-- `POSTGRES_USER` - Database user (default: `family_chores`)
-- `POSTGRES_PASSWORD` - Database password (default: `family_chores`)
-- `PARENT_PIN` - PIN required for Parent login (default: `1234`)
-- `PARENT_PIN` - PIN required for Parent login (default: `1234`). The application now prefers an encrypted `parent_pin` value stored in the `settings` table (if present) and will fall back to this environment variable only when no DB value exists or a DB read fails. Use the Settings page to update the Parent PIN (enter exactly 4 digits or leave empty to keep the existing value). Stored PINs are encrypted in the database for security.
-- `TZ` - Set to your local timezone (default: `America/Denver`)
-- `LOG_LEVEL` - Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`)
-- `ACCESS_TOKEN_EXPIRES` - Access token lifetime in seconds (default: `900` (15 minutes))
-- `REFRESH_TOKEN_EXPIRES` - Refresh token lifetime in seconds (default: `2592000` (30 days))
-- `TENANT_CREATION_KEY` - Management key used to protect the tenant-creation API (default: empty)
-	You can generate a secure key using Python. Example (recommended):
-### Create tenant helper script
 
-Use the included PowerShell helper to interactively create a tenant. The script reads `TENANT_CREATION_KEY` from the environment or from a top-level `.env` file.
+These variables control application security, database access, multi-tenancy, and operational settings. For multi-tenant deployments, each tenant's data is isolated, but global variables (like `TENANT_CREATION_KEY`) control tenant creation and access.
 
-Interactive usage (recommended):
+- `SECRET_KEY` — Flask session encryption and Fernet key for sensitive data (default: `dev-secret-key-change-in-production`).
+- `POSTGRES_HOST` — PostgreSQL hostname (default: `familychores-db`).
+- `POSTGRES_DATABASE` — Database name (default: `family_chores`).
+- `POSTGRES_USER` — Database user (default: `family_chores`).
+- `TZ` — Set to your local timezone (default: `America/Denver`).
+- `LOG_LEVEL` — Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`).
+- `ACCESS_TOKEN_EXPIRES` — Access token lifetime in seconds (default: `900` (15 minutes)).
+- `REFRESH_TOKEN_EXPIRES` — Refresh token lifetime in seconds (default: `2592000` (30 days)).
 
-```powershell
-.\scripts
-eate_tenant.ps1
-```
+**Sensitive credentials** (store these in a `.env` file):
+- `ADMIN_NAME` — Username for the first tenant.
+- `ADMIN_PASSWORD` — Password for the first tenant (can be changed later within the application).
+- `PARENT_PIN` — Parent PIN for the first tenant (can be changed later within the application).
+- `TENANT_CREATION_KEY` — Management key used to protect the tenant-creation API.
 
-Override the server URL (if different):
 
-```powershell
-.\scripts
-eate_tenant.ps1 -Url "http://localhost:8000"
-```
 
-Make sure `TENANT_CREATION_KEY` is set before running the script.
+### Multi-Tenancy and Tenant Creation
 
+The application is designed for multi-tenancy: each family (tenant) has its own isolated data and settings. Tenant creation is protected by a management key (`TENANT_CREATION_KEY`).
+
+You can generate a secure tenant creation key using Python:
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
 `secrets.token_urlsafe(48)` produces a URL-safe, high-entropy token (~64 characters).
 
+Use the included PowerShell helper to interactively create a new tenant. The script reads `TENANT_CREATION_KEY` from the environment or from a top-level `.env` file.
+
+Interactive usage (recommended):
+
+```powershell
+./scripts/create_tenant.ps1
+```
+
+Override the server URL (if different):
+
+```powershell
+./scripts/create_tenant.ps1 -Url "http://localhost:8000"
+```
+
+Make sure `TENANT_CREATION_KEY` is set before running the script.
+
+
+
 #### Volumes
 - `db_data`: PostgreSQL data directory
 - `avatar_data`: User avatar images
 - `backup_data`: Database backups
+
+---
+
+**Multi-tenancy note:** All features (users, chores, points, rewards, settings, history, etc.) are tenant-scoped. No data is ever shared between tenants. Tenant-aware APIs and database schema ensure strict isolation.
