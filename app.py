@@ -39,7 +39,9 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Application version
-__version__ = '1.3.0'
+
+__version__ = '2.0.0'
+
 # Github repo URL
 GITHUB_REPO_URL = 'https://github.com/elmerohueso/FamilyChores'
 
