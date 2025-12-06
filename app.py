@@ -1788,7 +1788,7 @@ def send_notification_email(notification_type, user_name, description, value=Non
     if not get_email_notification_setting(setting_key):
         return
     
-    # Get parent email addresses to send notification to
+    # Get parent email addresses and all email settings to send notification to
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     # Tenant-scoped email settings only
@@ -1797,27 +1797,21 @@ def send_notification_email(notification_type, user_name, description, value=Non
         cursor.close()
         conn.close()
         return
-    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s)', (tenant_id, 'parent_email_addresses', 'email_username'))
+    cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
     results = cursor.fetchall()
     
     # Get user's current balances if user_id is provided (tenant-scoped)
     point_balance = None
     cash_balance = None
     if user_id:
-        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
-        if tenant_id:
-            cursor.execute('SELECT points_balance, cash_balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
-            user_result = cursor.fetchone()
-            if user_result:
-                point_balance = user_result.get('points_balance') or 0
-                cash_balance = user_result.get('cash_balance') or 0
-            else:
-                point_balance = 0
-                cash_balance = 0
+        cursor.execute('SELECT points_balance, cash_balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
+        user_result = cursor.fetchone()
+        if user_result:
+            point_balance = user_result.get('points_balance') or 0
+            cash_balance = user_result.get('cash_balance') or 0
         else:
-            # No tenant context; skip balance lookup
-            point_balance = None
-            cash_balance = None
+            point_balance = 0
+            cash_balance = 0
     
     cursor.close()
     conn.close()
@@ -1924,7 +1918,7 @@ Amount: ${abs(value) if value else 'N/A'}
     try:
         for email in email_list:
             try:
-                send_email(email, subject, body_html, body_text)
+                send_email(email, subject, body_html, body_text, settings_dict=settings_dict)
             except Exception:
                 pass  # Silently ignore individual email errors
     except Exception:
