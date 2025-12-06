@@ -3777,8 +3777,8 @@ def job_timer():
     while True:
         try:
             # Automatic jobs trigger at midnight
-            trigger_hour = 19
-            trigger_minute = 42
+            trigger_hour = 0
+            trigger_minute = 0
 
             # Get current time in local system timezone
             now = datetime.now()
