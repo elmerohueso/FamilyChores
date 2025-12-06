@@ -1487,11 +1487,10 @@ def get_users():
         SELECT 
             u.user_id,
             u.full_name,
-            u.balance,
+            u.points_balance,
             u.avatar_path,
-            COALESCE(cb.cash_balance, 0.0) as cash_balance
+            u.cash_balance
         FROM tenant_users u
-        LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
         WHERE u.tenant_id = %s
         ORDER BY u.user_id
     ''', (tenant_id,))
@@ -1592,11 +1591,11 @@ def create_user():
         data = request.get_json()
     else:
         data = request.form.to_dict()
-        if 'balance' in data:
+        if 'points_balance' in data:
             try:
-                data['balance'] = int(data['balance'])
+                data['points_balance'] = int(data['points_balance'])
             except (ValueError, TypeError):
-                data['balance'] = 0
+                data['points_balance'] = 0
     
     if not data.get('full_name'):
         return jsonify({'error': 'full_name is required'}), 400
@@ -1610,8 +1609,8 @@ def create_user():
             return jsonify({'error': 'tenant context required'}), 401
 
         cursor.execute(
-            'INSERT INTO tenant_users (tenant_id, full_name, balance) VALUES (%s, %s, %s) RETURNING user_id',
-            (tenant_id, data['full_name'], data.get('balance', 0))
+            'INSERT INTO tenant_users (tenant_id, full_name, points_balance) VALUES (%s, %s, %s) RETURNING user_id',
+            (tenant_id, data['full_name'], data.get('points_balance', 0))
         )
         user_id = cursor.fetchone()[0]
         conn.commit()
@@ -1621,7 +1620,7 @@ def create_user():
         # Log user creation
         try:
             log_system_event('user_added', f'User created: {data["full_name"]}', 
-                            {'user_id': user_id, 'full_name': data['full_name'], 'balance': data.get('balance', 0)}, 'success')
+                            {'user_id': user_id, 'full_name': data['full_name'], 'points_balance': data.get('points_balance', 0)}, 'success')
         except Exception:
             pass  # Don't fail if logging fails
         
@@ -1688,10 +1687,8 @@ def delete_user(user_id):
     except Exception:
         # If transactions table or FK constraints behave differently, ignore and continue
         deleted_tx = None
-
-    cursor.execute('DELETE FROM tenant_cash_balances WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     
-    # Delete user (tenant-scoped)
+    # Delete user (tenant-scoped) - cash_balance is now a column in tenant_users
     cursor.execute('DELETE FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
     
     conn.commit()
@@ -1809,16 +1806,13 @@ def send_notification_email(notification_type, user_name, description, value=Non
     if user_id:
         tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
         if tenant_id:
-            cursor.execute('SELECT balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
+            cursor.execute('SELECT points_balance, cash_balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
             user_result = cursor.fetchone()
             if user_result:
-                point_balance = user_result.get('balance') or 0
-
-            cursor.execute('SELECT cash_balance FROM tenant_cash_balances WHERE user_id = %s AND tenant_id = %s', (user_id, tenant_id))
-            cash_result = cursor.fetchone()
-            if cash_result:
-                cash_balance = cash_result.get('cash_balance') or 0
+                point_balance = user_result.get('points_balance') or 0
+                cash_balance = user_result.get('cash_balance') or 0
             else:
+                point_balance = 0
                 cash_balance = 0
         else:
             # No tenant context; skip balance lookup
@@ -2445,7 +2439,7 @@ def reset_points():
 
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE tenant_users SET balance = 0 WHERE tenant_id = %s', (tenant_id,))
+        cursor.execute('UPDATE tenant_users SET points_balance = 0 WHERE tenant_id = %s', (tenant_id,))
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -2482,7 +2476,7 @@ def reset_cash():
 
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE tenant_cash_balances SET cash_balance = 0.0 WHERE tenant_id = %s', (tenant_id,))
+        cursor.execute('UPDATE tenant_users SET cash_balance = 0.0 WHERE tenant_id = %s', (tenant_id,))
         affected_users = cursor.rowcount
         conn.commit()
         cursor.close()
@@ -2794,10 +2788,9 @@ def withdraw_cash():
 
     # Check user exists and get cash balance (tenant-scoped)
     cursor.execute('''
-        SELECT u.user_id, COALESCE(cb.cash_balance, 0.0) as cash_balance
-        FROM tenant_users u
-        LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
-        WHERE u.user_id = %s AND u.tenant_id = %s
+        SELECT user_id, cash_balance
+        FROM tenant_users
+        WHERE user_id = %s AND tenant_id = %s
     ''', (data['user_id'], tenant_id))
     user = cursor.fetchone()
     
@@ -2811,17 +2804,10 @@ def withdraw_cash():
         cursor.close()
         conn.close()
         return jsonify({'error': f'Insufficient cash balance. User has ${current_cash:.2f}.'}), 400
-    
-    # Ensure cash_balance record exists (tenant-scoped)
-    cursor.execute('''
-        INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) 
-        VALUES (%s, %s, 0.0)
-        ON CONFLICT (tenant_id, user_id) DO NOTHING
-    ''', (tenant_id, data['user_id']))
 
     # Update cash_balance (subtract amount)
     cursor.execute('''
-        UPDATE tenant_cash_balances 
+        UPDATE tenant_users 
         SET cash_balance = cash_balance - %s 
         WHERE user_id = %s AND tenant_id = %s
     ''', (float(amount), data['user_id'], tenant_id))
@@ -2900,13 +2886,13 @@ def process_daily_cash_out(triggered_manually=False):
     max_rollover = get_setting('max_rollover_points', 4)
     
     # Get all users (tenant-scoped rows include tenant_id)
-    cursor.execute('SELECT tenant_id, user_id, balance FROM tenant_users')
+    cursor.execute('SELECT tenant_id, user_id, points_balance FROM tenant_users')
     users = cursor.fetchall()
 
     for user in users:
         tenant_id_row = user.get('tenant_id')
         user_id = user.get('user_id')
-        balance = user.get('balance') or 0
+        balance = user.get('points_balance') or 0
 
         if automatic_cash_out:
             # Convert (balance - max_rollover) to cash, keep max_rollover points
@@ -2916,16 +2902,9 @@ def process_daily_cash_out(triggered_manually=False):
                 remainder = balance % 5
                 rollover = min(max_rollover, remainder)
                 
-                # Ensure cash_balance record exists (tenant-scoped)
-                cursor.execute('''
-                    INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) 
-                    VALUES (%s, %s, 0.0)
-                    ON CONFLICT (tenant_id, user_id) DO NOTHING
-                ''', (tenant_id_row, user_id))
-                
                 # Update cash_balance
                 cursor.execute('''
-                    UPDATE tenant_cash_balances 
+                    UPDATE tenant_users 
                     SET cash_balance = cash_balance + %s 
                     WHERE user_id = %s AND tenant_id = %s
                 ''', (cash_amount, user_id, tenant_id_row))
@@ -2933,7 +2912,7 @@ def process_daily_cash_out(triggered_manually=False):
                 # Update point balance to max_rollover (tenant-scoped)
                 cursor.execute('''
                     UPDATE tenant_users 
-                    SET balance = %s 
+                    SET points_balance = %s 
                     WHERE user_id = %s AND tenant_id = %s
                 ''', (rollover, user_id, tenant_id_row))
                 
@@ -2949,7 +2928,7 @@ def process_daily_cash_out(triggered_manually=False):
             if balance > max_rollover:
                 cursor.execute('''
                     UPDATE tenant_users 
-                    SET balance = %s 
+                    SET points_balance = %s 
                     WHERE user_id = %s AND tenant_id = %s
                 ''', (max_rollover, user_id, tenant_id_row))
     
@@ -3028,7 +3007,7 @@ def record_chore():
         res = cursor.fetchone()
         transaction_id = res['transaction_id'] if res else None
 
-        cursor.execute('UPDATE tenant_users SET balance = balance + %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
+        cursor.execute('UPDATE tenant_users SET points_balance = points_balance + %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
 
         # Get user name for notification/logging (tenant-scoped)
         cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
@@ -3095,14 +3074,14 @@ def redeem_points():
 
     try:
         # Verify user balance (tenant-scoped)
-        cursor.execute('SELECT balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
+        cursor.execute('SELECT points_balance FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
         user_row = cursor.fetchone()
         if not user_row:
             cursor.close()
             conn.close()
             return jsonify({'error': 'User not found'}), 404
 
-        current_balance = int(user_row.get('balance') or 0)
+        current_balance = int(user_row.get('points_balance') or 0)
         if current_balance < points:
             cursor.close()
             conn.close()
@@ -3115,9 +3094,8 @@ def redeem_points():
                 conn.close()
                 return jsonify({'error': 'Points must be a multiple of 5 to redeem for money (5 points = $1)'}), 400
             cash_amount = points // 5
-            # Ensure cash_balance record exists (tenant-scoped)
-            cursor.execute('INSERT INTO tenant_cash_balances (tenant_id, user_id, cash_balance) VALUES (%s, %s, 0.0) ON CONFLICT (tenant_id, user_id) DO NOTHING', (tenant_id, data['user_id']))
-            cursor.execute('UPDATE tenant_cash_balances SET cash_balance = cash_balance + %s WHERE user_id = %s AND tenant_id = %s', (float(cash_amount), data['user_id'], tenant_id))
+            # Update cash_balance in tenant_users
+            cursor.execute('UPDATE tenant_users SET cash_balance = cash_balance + %s WHERE user_id = %s AND tenant_id = %s', (float(cash_amount), data['user_id'], tenant_id))
 
         # Insert transaction (store negative points)
         timestamp = get_system_timestamp()
@@ -3129,7 +3107,7 @@ def redeem_points():
         transaction_id = res['transaction_id'] if res else None
 
         # Subtract points from user balance (tenant-scoped)
-        cursor.execute('UPDATE tenant_users SET balance = balance - %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
+        cursor.execute('UPDATE tenant_users SET points_balance = points_balance - %s WHERE user_id = %s AND tenant_id = %s', (points, data['user_id'], tenant_id))
 
         # Get user name for notification/logging
         cursor.execute('SELECT full_name FROM tenant_users WHERE user_id = %s AND tenant_id = %s', (data['user_id'], tenant_id))
@@ -3232,10 +3210,9 @@ def send_daily_digest_email(force=False):
             SELECT 
                 u.user_id,
                 u.full_name,
-                u.balance as point_balance,
-                COALESCE(cb.cash_balance, 0.0) as cash_balance
+                u.points_balance as point_balance,
+                u.cash_balance
             FROM tenant_users u
-            LEFT JOIN tenant_cash_balances cb ON u.user_id = cb.user_id AND cb.tenant_id = u.tenant_id
             WHERE u.tenant_id = %s
             ORDER BY u.user_id
         ''', (tenant_id,))
