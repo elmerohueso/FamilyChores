@@ -2543,33 +2543,36 @@ def reset_transactions():
         
         return jsonify({'error': f'Error deleting transactions: {error_msg}'}), 500
 
-def send_email(to_email, subject, body_html, body_text=None):
-    """Send an email using SMTP settings from the database.
+def send_email(to_email, subject, body_html, body_text=None, settings_dict=None):
+    """Send an email using SMTP settings from the database or provided settings.
     
     Args:
         to_email: Recipient email address
         subject: Email subject
         body_html: HTML body content
         body_text: Plain text body content (optional)
+        settings_dict: Optional pre-fetched settings dict. If not provided, fetches from database using tenant context.
     
     Returns:
         tuple: (success: bool, message: str) - success indicates if email was sent, message contains status or error
     """
     try:
-        # Get tenant-scoped email settings from database
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
-        if not tenant_id:
+        # If settings not provided, fetch from database using tenant context
+        if settings_dict is None:
+            # Get tenant-scoped email settings from database
+            conn = get_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+            if not tenant_id:
+                cursor.close()
+                conn.close()
+                return False, 'Tenant context required'
+            cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
+            settings = cursor.fetchall()
             cursor.close()
             conn.close()
-            return False, 'Tenant context required'
-        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key LIKE %s', (tenant_id, 'email_%'))
-        settings = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
+            
+            settings_dict = {row['setting_key']: row['setting_value'] for row in settings}
         
         smtp_server = settings_dict.get('email_smtp_server', '').strip()
         smtp_port = settings_dict.get('email_smtp_port', '587').strip()
@@ -3238,190 +3241,279 @@ def send_daily_digest_email(triggered_manually=False):
     """Generate and send daily digest email with today's history and current balances.
     
     Args:
-        force: If True, send email even if daily digest notification is disabled (for manual sends)
+        triggered_manually: If True, send digest only for active tenant using that tenant's settings.
+                           If False, send digests for all tenants using each tenant's settings.
     """
-    # Check if daily digest is enabled (unless forced)
-    if not triggered_manually and not get_email_notification_setting('email_notify_daily_digest'):
-        return
+    
     try:
-        tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
-        if not tenant_id:
-            if triggered_manually:
-                raise ValueError('No tenant context for daily digest')
-            return
-        # Get parent email addresses
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s, %s, %s)', 
-                  (tenant_id, 'parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
-        results = cursor.fetchall()
-        settings_dict = {row['setting_key']: row['setting_value'] for row in results}
-        
-        parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
-        if not parent_emails_str:
-            cursor.close()
-            conn.close()
-            if triggered_manually:
-                raise ValueError("No parent email addresses configured")
-            return
-        
-        parent_emails = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
-        if not parent_emails:
-            cursor.close()
-            conn.close()
-            if triggered_manually:
-                raise ValueError("No parent email addresses configured")
-            return
-        
         # Get yesterday's date in local timezone (since digest triggers at midnight)
         now = datetime.now()
         yesterday = now - timedelta(days=1)
         yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
         yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+        date_str = yesterday.strftime('%B %d, %Y')
         
-        # Get all transactions for yesterday (tenant-scoped)
-        cursor.execute('''
-            SELECT 
-                t.transaction_id,
-                t.user_id,
-                t.description,
-                t.value,
-                t.transaction_type,
-                t.timestamp,
-                u.full_name as user_name
-            FROM tenant_transactions t
-            LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
-            WHERE t.tenant_id = %s AND t.timestamp >= %s AND t.timestamp <= %s
-            ORDER BY t.timestamp DESC
-        ''', (tenant_id, yesterday_start, yesterday_end))
-        transactions = cursor.fetchall()
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        if triggered_manually:
+            # Manual trigger: only process the active tenant using that tenant's settings
+            tenant_id = getattr(g, 'tenant_id', None) or request.cookies.get('tenant_id')
+            if not tenant_id:
+                raise ValueError('No tenant context for daily digest')
+            
+            # Get this tenant's email settings
+            cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s, %s, %s)', 
+                          (tenant_id, 'parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
+            results = cursor.fetchall()
+            settings_dict = {row['setting_key']: row['setting_value'] for row in results}
+            
+            parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
+            if not parent_emails_str:
+                cursor.close()
+                conn.close()
+                raise ValueError("No parent email addresses configured")
+            
+            parent_emails = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
+            if not parent_emails:
+                cursor.close()
+                conn.close()
+                raise ValueError("No parent email addresses configured")
+            
+            # Get transactions and users for this tenant
+            cursor.execute('''
+                SELECT 
+                    t.transaction_id,
+                    t.user_id,
+                    t.description,
+                    t.value,
+                    t.transaction_type,
+                    t.timestamp,
+                    u.full_name as user_name
+                FROM tenant_transactions t
+                LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
+                WHERE t.tenant_id = %s AND t.timestamp >= %s AND t.timestamp <= %s
+                ORDER BY t.timestamp DESC
+            ''', (tenant_id, yesterday_start, yesterday_end))
+            transactions = cursor.fetchall()
 
-        # Get all users with their current balances (tenant-scoped)
-        cursor.execute('''
-            SELECT 
-                u.user_id,
-                u.full_name,
-                u.points_balance as point_balance,
-                u.cash_balance
-            FROM tenant_users u
-            WHERE u.tenant_id = %s
-            ORDER BY u.user_id
-        ''', (tenant_id,))
-        users = cursor.fetchall()
+            cursor.execute('''
+                SELECT 
+                    u.user_id,
+                    u.full_name,
+                    u.points_balance as point_balance,
+                    u.cash_balance
+                FROM tenant_users u
+                WHERE u.tenant_id = %s
+                ORDER BY u.user_id
+            ''', (tenant_id,))
+            users = cursor.fetchall()
+            
+            cursor.close()
+            conn.close()
+            
+            # Generate and send digest for this tenant
+            _send_digest_for_tenant(parent_emails, transactions, users, date_str, triggered_manually, settings_dict)
         
-        cursor.close()
-        conn.close()
-        
-        # Format transactions for email
-        transactions_html = ""
-        transactions_text = ""
-        if transactions:
-            for t in transactions:
-                transaction_type = t.get('transaction_type', '')
-                value = t.get('value', 0)
-                description = t.get('description', '')
-                user_name = t.get('user_name', 'Unknown')
-                timestamp = t.get('timestamp')
-                
-                if timestamp:
-                    timestamp_aware = make_timezone_aware(timestamp)
-                    time_str = timestamp_aware.strftime('%I:%M %p')
-                else:
-                    time_str = 'N/A'
-                
-                if transaction_type == 'chore_completed':
-                    type_label = "Chore Completed"
-                    value_display = f"+{value} points"
-                elif transaction_type == 'points_redemption':
-                    type_label = "Points Redeemed"
-                    value_display = f"-{abs(value)} points"
-                elif transaction_type == 'cash_withdrawal':
-                    type_label = "Cash Withdrawn"
-                    value_display = f"-${abs(value):.2f}"
-                else:
-                    type_label = "Transaction"
-                    if value >= 0:
-                        value_display = f"+{value} points"
-                    else:
-                        value_display = f"{value} points"
-                
-                transactions_html += f"""
-                <tr>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
-                </tr>
-                """
-                transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
         else:
-            transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions yesterday</td></tr>"
-            transactions_text = "No transactions yesterday\n"
-        
-        # Format user balances
-        balances_html = ""
-        balances_text = ""
-        for user in users:
-            user_name = user.get('full_name', 'Unknown')
-            point_balance = user.get('point_balance', 0) or 0
-            cash_balance = user.get('cash_balance', 0) or 0
-            balances_html += f"""
+            # Automatic trigger: process all tenants with their own settings
+            cursor.execute('SELECT DISTINCT tenant_id FROM tenant_users')
+            all_tenants = cursor.fetchall()
+            cursor.close()
+            
+            for tenant_row in all_tenants:
+                tenant_id = tenant_row.get('tenant_id')
+                
+                # Get this tenant's email settings
+                conn = get_db_connection()
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                
+                # Check if daily digest is enabled for this tenant
+                cursor.execute('SELECT setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key = %s', (tenant_id, 'email_notify_daily_digest'))
+                digest_enabled_result = cursor.fetchone()
+                digest_enabled = digest_enabled_result and digest_enabled_result.get('setting_value') == '1'
+                
+                if not digest_enabled:
+                    cursor.close()
+                    conn.close()
+                    continue  # Skip this tenant if daily digest is not enabled
+                
+                cursor.execute('SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = %s AND setting_key IN (%s, %s, %s, %s, %s, %s)', 
+                              (tenant_id, 'parent_email_addresses', 'email_username', 'email_smtp_server', 'email_smtp_port', 'email_password', 'email_sender_name'))
+                results = cursor.fetchall()
+                settings_dict = {row['setting_key']: row['setting_value'] for row in results}
+                
+                parent_emails_str = settings_dict.get('parent_email_addresses', '').strip()
+                if not parent_emails_str:
+                    cursor.close()
+                    conn.close()
+                    continue  # Skip this tenant if no emails configured
+                
+                parent_emails = [e.strip() for e in parent_emails_str.split(',') if e.strip()]
+                if not parent_emails:
+                    cursor.close()
+                    conn.close()
+                    continue  # Skip this tenant if no valid emails
+                
+                # Get transactions and users for this tenant
+                cursor.execute('''
+                    SELECT 
+                        t.transaction_id,
+                        t.user_id,
+                        t.description,
+                        t.value,
+                        t.transaction_type,
+                        t.timestamp,
+                        u.full_name as user_name
+                    FROM tenant_transactions t
+                    LEFT JOIN tenant_users u ON t.user_id = u.user_id AND t.tenant_id = u.tenant_id
+                    WHERE t.tenant_id = %s AND t.timestamp >= %s AND t.timestamp <= %s
+                    ORDER BY t.timestamp DESC
+                ''', (tenant_id, yesterday_start, yesterday_end))
+                transactions = cursor.fetchall()
+
+                cursor.execute('''
+                    SELECT 
+                        u.user_id,
+                        u.full_name,
+                        u.points_balance as point_balance,
+                        u.cash_balance
+                    FROM tenant_users u
+                    WHERE u.tenant_id = %s
+                    ORDER BY u.user_id
+                ''', (tenant_id,))
+                users = cursor.fetchall()
+                
+                cursor.close()
+                conn.close()
+                
+                # Generate and send digest for this tenant
+                _send_digest_for_tenant(parent_emails, transactions, users, date_str, triggered_manually, settings_dict)
+    
+    except Exception as e:
+        logger.error(f"Error sending daily digest email: {e}", exc_info=True)
+
+
+def _send_digest_for_tenant(parent_emails, transactions, users, date_str, triggered_manually, settings_dict=None):
+    """Helper function to generate and send digest email for a specific tenant.
+    
+    Args:
+        parent_emails: List of email addresses to send to
+        transactions: Transactions for the tenant
+        users: Users for the tenant
+        date_str: Formatted date string for the email
+        triggered_manually: Whether this was manually triggered
+        settings_dict: Optional pre-fetched email settings dict. If not provided, settings will be fetched from request context.
+    """
+    # Format transactions for email
+    transactions_html = ""
+    transactions_text = ""
+    if transactions:
+        for t in transactions:
+            transaction_type = t.get('transaction_type', '')
+            value = t.get('value', 0)
+            description = t.get('description', '')
+            user_name = t.get('user_name', 'Unknown')
+            timestamp = t.get('timestamp')
+            
+            if timestamp:
+                timestamp_aware = make_timezone_aware(timestamp)
+                time_str = timestamp_aware.strftime('%I:%M %p')
+            else:
+                time_str = 'N/A'
+            
+            if transaction_type == 'chore_completed':
+                type_label = "Chore Completed"
+                value_display = f"+{value} points"
+            elif transaction_type == 'points_redemption':
+                type_label = "Points Redeemed"
+                value_display = f"-{abs(value)} points"
+            elif transaction_type == 'cash_withdrawal':
+                type_label = "Cash Withdrawn"
+                value_display = f"-${abs(value):.2f}"
+            else:
+                type_label = "Transaction"
+                if value >= 0:
+                    value_display = f"+{value} points"
+                else:
+                    value_display = f"{value} points"
+            
+            transactions_html += f"""
             <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{time_str}</td>
                 <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{point_balance} points</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${cash_balance:.2f}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{type_label}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{description}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{value_display}</td>
             </tr>
             """
-            balances_text += f"{user_name}: {point_balance} points, ${cash_balance:.2f}\n"
-        
-        # Generate email content
-        date_str = yesterday.strftime('%B %d, %Y')
-        subject = f"Family Chores Daily Digest - {date_str}"
-        
-        body_html = f"""
-        <html>
-          <head></head>
-          <body>
-            <h2>Daily Digest - {date_str}</h2>
-            
-            <h3>Yesterday's Activity</h3>
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                <thead>
-                    <tr style="background-color: #f5f5f5;">
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
-                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {transactions_html}
-                </tbody>
-            </table>
-            
-            <h3>Current Balances</h3>
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                <thead>
-                    <tr style="background-color: #f5f5f5;">
-                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
-                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Points</th>
-                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Cash</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {balances_html}
-                </tbody>
-            </table>
-            
-            <hr>
-            <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
-          </body>
-        </html>
+            transactions_text += f"{time_str} - {user_name}: {type_label} - {description} ({value_display})\n"
+    else:
+        transactions_html = "<tr><td colspan='5' style='padding: 8px; text-align: center; color: #666;'>No transactions yesterday</td></tr>"
+        transactions_text = "No transactions yesterday\n"
+    
+    # Format user balances
+    balances_html = ""
+    balances_text = ""
+    for user in users:
+        user_name = user.get('full_name', 'Unknown')
+        point_balance = user.get('point_balance', 0) or 0
+        cash_balance = user.get('cash_balance', 0) or 0
+        balances_html += f"""
+        <tr>
+            <td style="padding: 8px; border-bottom: 1px solid #eee;">{user_name}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">{point_balance} points</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${cash_balance:.2f}</td>
+        </tr>
         """
+        balances_text += f"{user_name}: {point_balance} points, ${cash_balance:.2f}\n"
+    
+    # Generate email content
+    subject = f"Family Chores Daily Digest - {date_str}"
+    
+    body_html = f"""
+    <html>
+      <head></head>
+      <body>
+        <h2>Daily Digest - {date_str}</h2>
         
-        body_text = f"""Daily Digest - {date_str}
+        <h3>Yesterday's Activity</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background-color: #f5f5f5;">
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
+                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                {transactions_html}
+            </tbody>
+        </table>
+        
+        <h3>Current Balances</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+                <tr style="background-color: #f5f5f5;">
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">User</th>
+                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Points</th>
+                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Cash</th>
+                </tr>
+            </thead>
+            <tbody>
+                {balances_html}
+            </tbody>
+        </table>
+        
+        <hr>
+        <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+      </body>
+    </html>
+    """
+    
+    body_text = f"""Daily Digest - {date_str}
 
 Yesterday's Activity:
 {transactions_text}
@@ -3430,26 +3522,23 @@ Current Balances:
 {balances_text}
 
 Sent from Family Chores application
-        """
-        
-        # Send email to all parent addresses
-        success_count = 0
-        error_messages = []
-        for email in parent_emails:
-            success, message = send_email(email, subject, body_html, body_text)
-            if success:
-                logger.info(f"Daily digest email sent to {email}")
-                success_count += 1
-            else:
-                logger.error(f"Failed to send daily digest email to {email}: {message}")
-                error_messages.append(f"{email}: {message}")
-        
-        # If forced (manual send), raise exception if all failed
-        if triggered_manually and success_count == 0:
-            raise Exception(f"Failed to send daily digest to any address: {'; '.join(error_messages) if error_messages else 'Unknown error'}")
+    """
     
-    except Exception as e:
-        logger.error(f"Error sending daily digest email: {e}", exc_info=True)
+    # Send email to all parent addresses
+    success_count = 0
+    error_messages = []
+    for email in parent_emails:
+        success, message = send_email(email, subject, body_html, body_text, settings_dict=settings_dict)
+        if success:
+            logger.info(f"Daily digest email sent to {email}")
+            success_count += 1
+        else:
+            logger.error(f"Failed to send daily digest email to {email}: {message}")
+            error_messages.append(f"{email}: {message}")
+    
+    # If manual send, raise exception if all failed
+    if triggered_manually and success_count == 0:
+        raise Exception(f"Failed to send daily digest to any address: {'; '.join(error_messages) if error_messages else 'Unknown error'}")
 
 
 
@@ -3466,8 +3555,8 @@ def job_timer():
     while True:
         try:
             # Automatic jobs trigger at midnight
-            trigger_hour = 18
-            trigger_minute = 30
+            trigger_hour = 19
+            trigger_minute = 42
 
             # Get current time in local system timezone
             now = datetime.now()
@@ -3483,8 +3572,8 @@ def job_timer():
             if "daily_digest" in jobs_to_trigger:
                 logger.info(f"Sending daily digest email.)")
                 send_daily_digest_email()
-            if not jobs_to_trigger:
-                logger.debug(f"No jobs to trigger at {now.strftime('%H:%M')}.")
+            #if not jobs_to_trigger:
+            #    logger.debug(f"No jobs to trigger at {now.strftime('%H:%M')}.")
             # Sleep for 1 minute and check again
             time_module.sleep(60)
         except Exception as e:
