@@ -594,6 +594,160 @@ async function tenantLogout() {
     window.location.href = '/';
 }
 
+// Lightweight auth check against /api/auth-check; returns the raw Response so callers can inspect .ok
+async function authCheck() {
+    return fetch('/api/auth-check', { method: 'GET', credentials: 'include' });
+}
+
+/**
+ * Perform tenant authentication login.
+ * @param {string} username - Tenant username
+ * @param {string} password - Tenant password
+ * @returns {Promise<{ok: boolean, status: number, data: Object}>} Login result with token/error
+ */
+async function authLogin(username, password) {
+    const resp = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        // send username as tenant_name to reuse existing tenant auth flow
+        body: JSON.stringify({
+            tenant_name: username,
+            password
+        }),
+        credentials: 'include', // ensure cookie Set-Cookie is accepted
+        // Instruct global fetch wrapper not to auto-redirect on 401 for login attempts
+        _skipAuthRedirect: true
+    });
+    // Try to parse JSON; if server returned plain text (or HTML), fall back to text
+    let data = {};
+    try {
+        data = await resp.json();
+    } catch (e) {
+        try {
+            const txt = await resp.text();
+            data = {
+                error: txt
+            };
+        } catch (e2) {
+            data = {};
+        }
+    }
+    return {
+        ok: resp.ok,
+        status: resp.status,
+        data
+    };
+}
+
+/**
+ * Create a new tenant (register).
+ * @param {Object} data - Tenant registration data
+ * @param {string} data.tenant_name - Tenant username
+ * @param {string} data.password - Tenant password
+ * @param {string} data.parent_pin - 4-digit parent PIN
+ * @param {string} data.invite_token - Registration invite token
+ * @returns {Promise<Response>} Fetch response object
+ */
+async function createTenant(data) {
+    try {
+        const response = await fetch('/api/tenants', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        });
+        return response;
+    } catch (error) {
+        console.error('Error creating tenant:', error);
+        throw error;
+    }
+}
+
+/**
+ * Fetch invite details (e.g., email restrictions) for a given token.
+ * Returns null on error or if token is missing.
+ * @param {string} token - Invite token to validate
+ * @returns {Promise<Object|null>} Invite info payload or null when unavailable
+ */
+async function fetchInviteInfo(token) {
+    if (!token) return null;
+
+    try {
+        const response = await fetch('/api/invite-info', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ token })
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.warn('Could not fetch invite info:', error);
+        return null;
+    }
+}
+
+/**
+ * Verify tenant email address via token from URL parameters.
+ * Calls /api/verify-tenant-email and stores tokens on success.
+ * @param {Function} updateUICallback - Callback function(status, title, message, isError) to update UI
+ * @returns {Promise<void>}
+ */
+async function verifyEmail(updateUICallback) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tenantId = urlParams.get('tenant_id');
+    const token = urlParams.get('token');
+
+    if (!tenantId || !token) {
+        updateUICallback('error', 'Invalid Verification Link', 'The verification link is missing required parameters. Please request a new verification email.', true);
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/verify-tenant-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                tenant_id: tenantId,
+                token: token
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            updateUICallback('error', 'Verification Failed', data.error || 'Failed to verify email. Please try again.', true);
+            return;
+        }
+
+        // Success! Store tokens and redirect to dashboard
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        if (data.refresh_expires) {
+            localStorage.setItem('refresh_expires', data.refresh_expires);
+        }
+
+        updateUICallback('success', 'Email Verified!', 'Your account has been activated. Redirecting to dashboard...', false);
+        
+        setTimeout(() => {
+            window.location.href = '/dashboard';
+        }, 2000);
+
+    } catch (error) {
+        updateUICallback('error', 'Verification Error', `An error occurred: ${error.message}`, true);
+    }
+}
+
 /**
  * Safely escape text for HTML insertion
  * @param {string} text - Raw text to escape
