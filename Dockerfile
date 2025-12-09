@@ -23,5 +23,5 @@ RUN mkdir -p /app/static/icons /data/avatars
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["python", "-u","app.py"]
+# Run the application with Gunicorn
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
