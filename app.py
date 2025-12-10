@@ -3948,7 +3948,7 @@ def job_timer():
                 logger.info(f"Sending daily digest email.)")
                 send_daily_digest_email()
             #if not jobs_to_trigger:
-            #    logger.debug(f"No jobs to trigger at {now.strftime('%H:%M')}.")
+                #logger.debug(f"No jobs to trigger at {now.strftime('%H:%M')}.")
             # Sleep for 1 minute and check again
             time_module.sleep(60)
         except Exception as e:
@@ -3962,14 +3962,17 @@ def start_job_timer():
     try:
         thread = threading.Thread(target=job_timer, daemon=True, name="JobTimerWorker")
         thread.start()
-        logger.info("job_timer started successfully")
+        logger.debug("job_timer started successfully")
     except Exception as e:
         logger.error(f"Failed to start job_timer: {e}", exc_info=True)
 
 ################################
 
-# Start the job timer for automatic daily cash out and daily digest emails
-start_job_timer()
+# The job timer should be started by the process supervisor so it runs
+# as a single background thread. When running under Gunicorn we start it
+# from the Gunicorn `on_starting` hook (see `gunicorn_conf.py`). For
+# local development (running this file directly) still start the timer
+# below inside the `__main__` block.
 
 
 if __name__ == '__main__':    
@@ -3978,21 +3981,24 @@ if __name__ == '__main__':
 
     # Ensure existing database is backed up on startup
     try:
+        logger.debug(f"Backing up database on startup")
         backup_database()
     except Exception as e:
-        logger.info(f"Database backup failed (this is OK if this is a new environment): {e}")
+        logger.error(f"Database backup failed (this is OK if this is a new environment): {e}")
 
     # Delete old database backups
     try:
+        logger.debug(f"Pruning old database backups on startup")
         delete_old_backups()
     except Exception as e:
-        logger.info(f"Failed to deleted old database backups: {e}")
+        logger.error(f"Failed to deleted old database backups: {e}")
 
     # Ensure database is initialized
     try:
         init_database()
+        logger.debug(f"Initial database check complete on startup")
     except Exception as e:
-        logger.info(f"Database initialization check failed (this is OK if tables already exist): {e}")
+        logger.error(f"Database initialization check failed (this is OK if tables already exist): {e}")
     
     app.run(host='0.0.0.0', port=8000, debug=False)
 
