@@ -21,10 +21,8 @@
 
             <form id="withdrawForm">
                 <div class="form-group">
-                    <label for="user_id">User *</label>
-                    <select id="user_id" name="user_id" required>
-                        <option value="">Select a user...</option>
-                    </select>
+                    <div id="userName" class="user-name" style="padding: 8px 0; font-weight: 500;"></div>
+                    <input type="hidden" id="user_id" name="user_id" required>
                     <div id="userCashBalance" class="balance cash" style="display: none;"></div>
                 </div>
 
@@ -135,41 +133,42 @@
             try {
                 users = await getUsers();
                 
-                const userSelect = document.getElementById('user_id');
-                userSelect.innerHTML = '<option value="">Select a user...</option>';
+                // Get user_id from URL parameter
+                const urlParams = new URLSearchParams(window.location.search);
+                const userIdFromUrl = urlParams.get('user_id');
                 
-                users.forEach(user => {
-                    const option = document.createElement('option');
-                    option.value = user.user_id;
-                    option.textContent = `${user.full_name} (Cash: $${(user.cash_balance || 0).toFixed(2)})`;
-                    userSelect.appendChild(option);
-                });
-
-                // Pre-select user from URL parameter (also cleans URL)
-                preSelectUserFromUrl('user_id');
+                if (userIdFromUrl) {
+                    const user = users.find(u => u.user_id == userIdFromUrl);
+                    if (user) {
+                        selectedUser = user;
+                        
+                        // Set the hidden user_id field
+                        document.getElementById('user_id').value = user.user_id;
+                        
+                        // Display the user's name
+                        document.getElementById('userName').textContent = user.full_name;
+                        
+                        // Display the user's cash balance
+                        const balanceDiv = document.getElementById('userCashBalance');
+                        balanceDiv.textContent = `Current cash balance: $${(user.cash_balance || 0).toFixed(2)}`;
+                        balanceDiv.style.display = 'block';
+                        
+                        // Clean up URL without reloading the page
+                        const cleanUrl = window.location.pathname;
+                        window.history.replaceState({}, '', cleanUrl);
+                    } else {
+                        showToast('User not found. Please select from dashboard.', true);
+                        setTimeout(() => { window.location.href = '/dashboard'; }, 2000);
+                    }
+                } else {
+                    showToast('No user selected. Redirecting to dashboard.', true);
+                    setTimeout(() => { window.location.href = '/dashboard'; }, 2000);
+                }
             } catch (error) {
                 console.error('Error loading users:', error);
                 showToast('Error loading users. Please refresh the page.', true);
             }
         }
-
-        // Update user cash balance display
-        document.getElementById('user_id').addEventListener('change', (e) => {
-            const userId = e.target.value;
-            if (userId) {
-                selectedUser = users.find(u => u.user_id == userId);
-                if (selectedUser) {
-                    const balanceDiv = document.getElementById('userCashBalance');
-                    balanceDiv.textContent = `Current cash balance: $${(selectedUser.cash_balance || 0).toFixed(2)}`;
-                    balanceDiv.style.display = 'block';
-                }
-            } else {
-                selectedUser = null;
-                document.getElementById('userCashBalance').style.display = 'none';
-            }
-            updatePreview();
-            updateSubmitButton();
-        });
 
         // Validate amount input (must be whole dollar)
         document.getElementById('amount').addEventListener('input', (e) => {
