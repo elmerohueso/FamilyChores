@@ -765,7 +765,7 @@ def api_create_tenant():
     invite_token = (data.get('invite_token') or '').strip()
     tenant_email = (data.get('tenant_email') or '').strip()
 
-    # Require invite token (no management key fallback)
+    # Require invite token
     if not invite_token:
         try:
             log_system_event('tenant_create_forbidden', 'Attempt to create tenant without invite token', None, 'error')
@@ -932,6 +932,43 @@ def api_create_tenant():
 
         conn.commit()
 
+        # Send notification email to super admin about new tenant creation
+        super_admin_email = os.environ.get('SUPER_ADMIN_EMAIL', '').strip()
+        if super_admin_email:
+            try:
+                subject = f"New Tenant Created Pending Verification: {tenant_name}"
+                body_html = f"""
+                <html>
+                    <head></head>
+                    <body>
+                    <h2>New Tenant Registration Pending Verification</h2>
+                    <p>A new tenant has been created in Family Chores:</p>
+                    <ul>
+                        <li><strong>Tenant Name:</strong> {tenant_name}</li>
+                        <li><strong>Tenant ID:</strong> {tenant_id}</li>
+                        <li><strong>Email:</strong> {tenant_email if tenant_email else 'Not provided'}</li>
+                        <li><strong>Created At:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</li>
+                    </ul>
+                    <hr>
+                    <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+                    </body>
+                </html>
+                """
+                body_text = f"""New Tenant Registration Pending Verification
+
+        A new tenant has been created in Family Chores:
+
+        Tenant Name: {tenant_name}
+        Tenant ID: {tenant_id}
+        Email: {tenant_email if tenant_email else 'Not provided'}
+        Created At: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+
+        Sent from Family Chores application
+                """
+                send_email(super_admin_email, subject, body_html, body_text)
+            except Exception as e:
+                log_system_event('super_admin_notification_failed', f'Failed to send super admin notification: {str(e)}', {'tenant_id': str(tenant_id)}, 'error')
+        # Log tenant creation event
         try:
             log_system_event('tenant_created', f'Tenant created: {tenant_name}', {'tenant_id': str(tenant_id)}, 'success')
         except Exception:
@@ -1052,6 +1089,43 @@ def api_verify_tenant_email():
         ''', (str(tenant_id),))
         conn.commit()
         
+        # Send notification email to super admin about email verification
+        super_admin_email = os.environ.get('SUPER_ADMIN_EMAIL', '').strip()
+        if super_admin_email:
+            try:
+                subject = f"Tenant Email Verified: {tenant_row['tenant_name']}"
+                body_html = f"""
+                <html>
+                    <head></head>
+                    <body>
+                    <h2>Tenant Email Verification Complete</h2>
+                    <p>A tenant has verified their email address in Family Chores:</p>
+                    <ul>
+                        <li><strong>Tenant Name:</strong> {tenant_row['tenant_name']}</li>
+                        <li><strong>Tenant ID:</strong> {tenant_id}</li>
+                        <li><strong>Email:</strong> {data.get('tenant_email', 'Not provided')}</li>
+                        <li><strong>Verified At:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</li>
+                    </ul>
+                    <hr>
+                    <p style="color: #666; font-size: 12px;">Sent from Family Chores application</p>
+                    </body>
+                </html>
+                """
+                body_text = f"""Tenant Email Verification Complete
+
+        A tenant has verified their email address in Family Chores:
+
+        Tenant Name: {tenant_row['tenant_name']}
+        Tenant ID: {tenant_id}
+        Email: {data.get('tenant_email', 'Not provided')}
+        Verified At: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+
+        Sent from Family Chores application
+                """
+                send_email(super_admin_email, subject, body_html, body_text)
+            except Exception as e:
+                log_system_event('super_admin_notification_failed', f'Failed to send super admin notification for tenant verification: {str(e)}', {'tenant_id': str(tenant_id)}, 'error')
+        # Log email verification event
         try:
             log_system_event('tenant_email_verified', f'Tenant email verified: {tenant_row["tenant_name"]}', {'tenant_id': str(tenant_id)}, 'success')
         except Exception:
