@@ -279,17 +279,7 @@
                         redemptionTypeText = 'Money';
                     }
                     const newBalancePreview = user ? (user.points_balance || 0) - points : null;
-                    if (userRole === 'kid') {
-                        showConfirmation(user, points, redemptionText, redemptionTypeText);
-                    } else {
-                        showToast(`${user.full_name} redeemed ${points} points.`);
-                    }
-                    resetForm();
-                    await loadUsers();
-                    submitBtn.disabled = false;
-                } else {
-                    showToast(result.error || 'Error redeeming points', true);
-                    submitBtn.disabled = false;
+                    showConfirmation(user, points, redemptionText, redemptionTypeText);
                 }
             } catch (error) {
                 showToast('Network error. Please try again.', true);
@@ -330,7 +320,7 @@
 
         function closeConfirmation() {
             document.getElementById('confirmationPopup').classList.remove('show');
-            window.location.reload();
+            window.location.href = '/dashboard';
         }
 
         // Close popup when clicking outside

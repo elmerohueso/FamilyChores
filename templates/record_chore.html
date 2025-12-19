@@ -99,7 +99,7 @@
 
         function closeConfirmation() {
             document.getElementById('confirmationPopup').classList.remove('show');
-            window.location.reload();
+            window.location.href = '/dashboard';
         }
 
         function resetForm() {
@@ -407,14 +407,8 @@
                     const chore = chores.find(c => c.chore_id == data.chore_id);
                     if (user && chore) {
                         const newBalance = (user.points_balance || 0) + data.value;
-                        if (userRole === 'kid') {
-                            showConfirmation(user, chore, data.value);
-                        } else {
-                            showToast(`${user.full_name} completed chore "${chore.chore}".`);
-                        }
+                        showConfirmation(user, chore, data.value);
                     }
-                    resetForm();
-                    await loadUsers();
                     submitBtn.disabled = false;
                 } else {
                     showToast(result.error || 'Error recording chore', true);

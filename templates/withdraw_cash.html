@@ -224,19 +224,9 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    await loadUsers();
                     const updatedUser = users.find(u => u.user_id == userId) || user;
                     const newBalance = result.new_balance;
-                    if (userRole === 'kid') {
-                        showConfirmation(updatedUser, amount, newBalance);
-                    } else {
-                        showToast(`${updatedUser.full_name} withdrew $${amount.toFixed(2)}.`);
-                    }
-                    resetForm();
-                    submitBtn.disabled = false;
-                } else {
-                    showToast(result.error || 'Error withdrawing cash', true);
-                    submitBtn.disabled = false;
+                    showConfirmation(updatedUser, amount, newBalance);
                 }
             } catch (error) {
                 showToast('Network error. Please try again.', true);
@@ -268,7 +258,7 @@
 
         function closeConfirmation() {
             document.getElementById('confirmationPopup').classList.remove('show');
-            window.location.reload();
+            window.location.href = '/dashboard';
         }
 
         // Close popup when clicking outside
